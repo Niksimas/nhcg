@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Alignment App</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/babel-standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/lucide@0.441.0/dist/umd/lucide.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function TextAlignCenter() {
+      const [inputText, setInputText] = useState('');
+      const [alignedText, setAlignedText] = useState('');
+      const [lineWidth, setLineWidth] = useState(60);
+      const [error, setError] = useState('');
+
+      useEffect(() => {
+        // Initialize Lucide icons
+        lucide.createIcons();
+      }, []);
+
+      const centerAlignText = () => {
+        setError('');
+        if (!inputText.trim()) {
+          setError('Ошибка: Текст не может быть пустым');
+          setAlignedText('');
+          return;
+        }
+        if (lineWidth < 10 || lineWidth > 200) {
+          setError('Ошибка: Ширина строки должна быть от 10 до 200 символов');
+          return;
+        }
+        const lines = inputText.split('\n');
+        const centeredLines = lines.map(line => {
+          const trimmedLine = line.trim();
+          if (trimmedLine.length === 0) return '';
+          if (trimmedLine.length > lineWidth) {
+            return trimmedLine;
+          }
+          const padding = Math.floor((lineWidth - trimmedLine.length) / 2);
+          return ' '.repeat(padding) + trimmedLine;
+        });
+        setAlignedText(centeredLines.join('\n'));
+      };
+
+      const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          if (file.size > 1048576) {
+            setError('Ошибка: Размер файла не должен превышать 1 МБ');
+            return;
+          }
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            setInputText(event.target.result);
+            setError('');
+          };
+          reader.readAsText(file);
+        }
+      };
+
+      const downloadResult = () => {
+        if (!alignedText) {
+          setError('Ошибка: Нет результата для сохранения');
+          return;
+        }
+        const blob = new Blob([alignedText], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'centered_text.txt';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      };
+
+      const clearAll = () => {
+        setInputText('');
+        setAlignedText('');
+        setError('');
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+          <div className="max-w-6xl mx-auto">
+            <div className="bg-white rounded-lg shadow-xl p-8">
+              <div className="flex items-center gap-3 mb-6">
+                <i data-lucide="align-center" className="w-8 h-8 text-indigo-600"></i>
+                <h1 className="text-3xl font-bold text-gray-800">
+                  Выравнивание текста по центру
+                </h1>
+              </div>
+              <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <h2 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+                  <i data-lucide="file-text" className="w-5 h-5"></i>
+                  Инструкция по использованию
+                </h2>
+                <ul className="text-sm text-blue-800 space-y-1">
+                  <li>• Введите текст в поле ввода или загрузите файл</li>
+                  <li>• Установите ширину строки (10-200 символов)</li>
+                  <li>• Нажмите "Выровнять по центру"</li>
+                  <li>• Сохраните результат в файл при необходимости</li>
+                </ul>
+              </div>
+              <div className="grid md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Ширина строки (символов):
+                  </label>
+                  <input
+                    type="number"
+                    value={lineWidth}
+                    onChange={(e) => setLineWidth(parseInt(e.target.value) || 60)}
+                    min="10"
+                    max="200"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Загрузить файл:
+                  </label>
+                  <label className="flex items-center justify-center px-4 py-2 bg-gray-100 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-200 transition">
+                    <i data-lucide="upload" className="w-5 h-5 mr-2"></i>
+                    <span>Выбрать файл</span>
+                    <input
+                      type="file"
+                      accept=".txt"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+              {error && (
+                <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-red-800 font-medium">{error}</p>
+                </div>
+              )}
+              <div className="grid md:grid-cols-2 gap-6 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Исходный текст:
+                  </label>
+                  <textarea
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    placeholder="Введите текст для выравнивания..."
+                    className="w-full h-64 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Результат:
+                  </label>
+                  <textarea
+                    value={alignedText}
+                    readOnly
+                    placeholder="Здесь появится выровненный текст..."
+                    className="w-full h-64 px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 font-mono text-sm"
+                  />
+                </div>
+              </div>
+              <div className=" textes flex flex-wrap gap-4">
+                <button
+                  onClick={centerAlignText}
+                  className="flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium"
+                >
+                  <i data-lucide="align-center" className="w-5 h-5"></i>
+                  Выровнять по центру
+                </button>
+                <button
+                  onClick={downloadResult}
+                  disabled={!alignedText}
+                  className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  <i data-lucide="download" className="w-5 h-5"></i>
+                  Сохранить результат
+                </button>
+                <button
+                  onClick={clearAll}
+                  className="flex items-center gap-2 px-6 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition font-medium"
+                >
+                  Очистить всё
+                </button>
+              </div>
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                <h3 className="font-semibold text-gray-800 mb-2">Статистика:</h3>
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Символов в исходном тексте:</span>
+                    <span className="ml-2 font-bold">{inputText.length}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Строк:</span>
+                    <span className="ml-2 font-bold">{inputText.split('\n').length}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Ширина строки:</span>
+                    <span className="ml-2 font-bold">{lineWidth}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<TextAlignCenter />);
+  </script>
+</body>
+</html>
