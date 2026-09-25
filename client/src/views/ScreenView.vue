@@ -153,7 +153,13 @@ const mode = computed(() => state.value?.mode)
 
 <template>
   <div class="screen" :class="{ nocursor: cursorHidden && started }" @click="start">
-    <div v-if="!state" class="wait center">
+    <div v-if="conn.status.value === 'noroom'" class="wait center gone">
+      <p>{{ conn.errorCode.value === 'room_closed' ? 'Игра завершена' : 'Игра не найдена' }}</p>
+      <p class="muted small">{{ conn.errorMessage.value }}</p>
+      <a class="btn big" href="/">На главную</a>
+    </div>
+
+    <div v-else-if="!state" class="wait center">
       <p>Подключение к серверу игры…</p>
     </div>
 
@@ -197,7 +203,7 @@ const mode = computed(() => state.value?.mode)
       </div>
     </Transition>
 
-    <div v-if="conn.status.value !== 'online' && state" class="offline">
+    <div v-if="conn.status.value !== 'online' && conn.status.value !== 'noroom' && state" class="offline">
       <Icon name="wifiOff" /> Нет связи с сервером — переподключаемся…
     </div>
 
@@ -237,6 +243,14 @@ const mode = computed(() => state.value?.mode)
   height: 100%;
   font-size: 2rem;
   color: var(--muted);
+}
+.wait.gone {
+  flex-direction: column;
+  gap: 18px;
+  text-align: center;
+}
+.wait.gone p {
+  margin: 0;
 }
 .corner-qr {
   position: absolute;

@@ -22,6 +22,8 @@ function onCodeInput(e: Event) {
   const el = e.target as HTMLInputElement
   const digits = normalizeCode(el.value)
   codeInput.value = digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits
+  // Если введена не цифра, значение не изменилось и Vue не перерисует поле — поправляем сами.
+  if (el.value !== codeInput.value) el.value = codeInput.value
   joinError.value = ''
 }
 

@@ -8,9 +8,9 @@ import WebSocket from 'ws'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-// Запускает сервер в отдельном процессе с временной папкой данных.
-export async function startServer(args = []) {
-  const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'quiz-int-'))
+// Запускает сервер в отдельном процессе с временной папкой данных (или с указанной — для проверки перезапуска).
+export async function startServer(args = [], { dataDir: existingDir = null } = {}) {
+  const dataDir = existingDir ?? (await fsp.mkdtemp(path.join(os.tmpdir(), 'quiz-int-')))
   let port = 40000 + Math.floor(Math.random() * 20000)
   const proc = spawn(process.execPath, ['server/index.js', '--no-open', '--port', String(port), '--data', dataDir, ...args], {
     cwd: root,
@@ -39,10 +39,14 @@ export async function startServer(args = []) {
     dataDir,
     url: `http://localhost:${port}`,
     log: () => log,
-    async stop() {
-      proc.kill('SIGTERM')
-      await new Promise((r) => setTimeout(r, 300))
-      await fsp.rm(dataDir, { recursive: true, force: true })
+    // keepData — оставить папку данных (сервер перезапустят на ней же).
+    async stop({ keepData = false } = {}) {
+      if (proc.exitCode === null) {
+        const exited = new Promise((r) => proc.once('exit', r))
+        proc.kill('SIGTERM')
+        await exited
+      }
+      if (!keepData) await fsp.rm(dataDir, { recursive: true, force: true })
     },
   }
 }

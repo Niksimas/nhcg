@@ -8,7 +8,7 @@ import path from 'node:path'
 import { createHash, randomBytes, randomInt } from 'node:crypto'
 import { Game } from './game/game.js'
 import { Hub } from './hub.js'
-import { PackStore } from './packs/store.js'
+import { PackStore, PackError } from './packs/store.js'
 import { getLanAddresses, isLocalAddress } from './net.js'
 
 const KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
@@ -64,6 +64,22 @@ export function originFromRequest(req) {
   if (!host || /^(localhost|127\.|\[::1\]|0\.0\.0\.0)/i.test(host)) return null
   const proto = String(h['x-forwarded-proto'] ?? (req.socket?.encrypted ? 'https' : 'http')).split(',')[0].trim()
   return `${proto === 'https' ? 'https' : 'http'}://${host}`
+}
+
+async function dirSize(dir) {
+  let total = 0
+  let entries = []
+  try {
+    entries = await fs.promises.readdir(dir, { withFileTypes: true })
+  } catch {
+    return 0
+  }
+  for (const e of entries) {
+    const full = path.join(dir, e.name)
+    if (e.isDirectory()) total += await dirSize(full)
+    else total += (await fs.promises.stat(full).catch(() => ({ size: 0 }))).size
+  }
+  return total
 }
 
 function writeJsonAtomicSync(file, data) {
@@ -178,6 +194,7 @@ export class RoomManager {
     this.rooms = new Map()
     this.libraries = new Map()
     this.libraryTouched = new Map()
+    this.storage = { at: 0, bytes: 0 }
     this.defaultRoom = null
     this.port = config.port
     this.protocol = config.tls ? 'https' : 'http'
@@ -190,11 +207,13 @@ export class RoomManager {
     if (!isValidLibId(libId)) throw new RoomError('Неверная библиотека пакетов')
     let store = this.libraries.get(libId)
     if (!store) {
+      const rooms = this.mode === 'rooms'
       store = new PackStore({
         dataDir: this.libraryDir(libId),
         builtinDir: this.builtinDir,
         libId,
-        quotaBytes: this.mode === 'rooms' ? this.config.libraryQuotaMb * 1024 * 1024 : 0,
+        quotaBytes: rooms ? this.config.libraryQuotaMb * 1024 * 1024 : 0,
+        serverCheck: rooms ? (extra) => this.checkServerStorage(extra) : null,
       })
       this.libraries.set(libId, store)
     }
@@ -216,6 +235,27 @@ export class RoomManager {
     } catch {
       // не критично
     }
+  }
+
+  // Сколько места занимают все библиотеки ведущих (пересчитывается не чаще раза в минуту).
+  async storageUsage(now = Date.now()) {
+    if (now - this.storage.at > 60_000) {
+      const root = path.join(this.dataDir, 'libraries')
+      this.storage = { at: now, bytes: fs.existsSync(root) ? await dirSize(root) : 0 }
+    }
+    return this.storage.bytes
+  }
+
+  // Общий лимит места под пакеты на сервере комнат — чтобы диск не заполнили множеством библиотек.
+  async checkServerStorage(extraBytes) {
+    const limit = (this.config.storageQuotaMb ?? 0) * 1024 * 1024
+    if (!limit) return
+    const used = await this.storageUsage()
+    if (used + extraBytes > limit) {
+      throw new PackError('На сервере закончилось место для пакетов. Попробуйте позже или обратитесь к владельцу сервера.')
+    }
+    // Учитываем загрузку сразу, не дожидаясь пересчёта.
+    this.storage.bytes += extraBytes
   }
 
   // Удаление библиотек пакетов, которыми долго никто не пользовался (только в режиме комнат).

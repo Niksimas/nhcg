@@ -42,6 +42,10 @@ function setMode(mode: Mode) {
   if (mode !== s.value.mode) void run('mode.set', { mode })
 }
 
+function toggleOnline() {
+  void run('settings.update', { patch: { onlineMode: !s.value.settings.onlineMode } })
+}
+
 function toggleTeams() {
   void run('settings.update', { patch: { teamMode: !s.value.settings.teamMode } })
 }
@@ -79,6 +83,13 @@ function openScreen() {
               комнаты (или сканируют QR-код):
             </p>
             <div class="url code nums">{{ formatCode(code) }}</div>
+            <label class="check online">
+              <input type="checkbox" :checked="s.settings.onlineMode" @change="toggleOnline" />
+              <span>
+                <b>Игроки в разных местах</b>
+                <span class="muted"> — игра через интернет: кнопки загораются у всех одновременно</span>
+              </span>
+            </label>
           </template>
           <template v-else>
             <p>Телефоны должны быть в <b>той же Wi-Fi сети</b>, что и этот компьютер. Отсканируйте QR-код или откройте адрес:</p>
@@ -212,6 +223,9 @@ function openScreen() {
 .url.code {
   font-size: 2.4rem;
   letter-spacing: 0.08em;
+}
+.check.online {
+  margin: 2px 0 10px;
 }
 .modes {
   display: grid;

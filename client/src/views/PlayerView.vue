@@ -429,7 +429,7 @@ const pingClass = computed(() => {
   <div class="player" :style="{ '--me': me?.color ?? '#4f7bff', '--me-t': textOn(me?.color ?? '#4f7bff') }">
     <!-- Нет подключения и ещё не вошли -->
     <div v-if="status === 'noroom'" class="splash center">
-      <h2>Игра не найдена</h2>
+      <h2>{{ conn.errorCode.value === 'room_closed' ? 'Игра завершена' : 'Игра не найдена' }}</h2>
       <p class="muted">{{ conn.errorMessage.value || 'Комната не найдена или уже закрыта.' }}</p>
       <p v-if="room.code" class="muted small">Код комнаты: {{ formatCode(room.code) }}</p>
       <a class="btn primary big" href="/">Ввести другой код</a>

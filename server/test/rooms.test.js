@@ -28,6 +28,7 @@ async function makeManager(overrides = {}) {
     roomTtlHours: 12,
     libraryQuotaMb: 500,
     libraryTtlDays: 90,
+    storageQuotaMb: 10240,
     requireKey: false,
     publicUrl: null,
     tls: null,
@@ -269,6 +270,27 @@ test('квота библиотеки пакетов ведущего', async ()
     const other = await manager.create({ libId: libIdForOwner('владелец-4-xxxxxxxx') })
     assert.ok(!(await other.store.list()).some((p) => p.id === id))
     assert.ok((await other.store.list()).some((p) => p.id === 'demo-svoya-igra'), 'встроенные пакеты видны всем')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('общий лимит места под пакеты на сервере', async () => {
+  const { manager, cleanup } = await makeManager({ storageQuotaMb: 1, libraryQuotaMb: 500 })
+  try {
+    const room = await manager.create({ libId: libIdForOwner('владелец-7-xxxxxxxx') })
+    const id = await room.store.create(null)
+    const file = path.join(os.tmpdir(), `quiz-mid-${process.pid}.png`)
+    fs.writeFileSync(file, Buffer.alloc(700 * 1024))
+    try {
+      await room.store.addMedia(id, file, 'a.png')
+      fs.writeFileSync(file, Buffer.alloc(700 * 1024))
+      const other = await manager.create({ libId: libIdForOwner('владелец-8-xxxxxxxx') })
+      const id2 = await other.store.create(null)
+      await assert.rejects(other.store.addMedia(id2, file, 'b.png'), /закончилось место/)
+    } finally {
+      fs.rmSync(file, { force: true })
+    }
   } finally {
     await cleanup()
   }

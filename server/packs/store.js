@@ -123,12 +123,14 @@ async function moveFile(from, to) {
 }
 
 export class PackStore {
-  // libId — идентификатор библиотеки (входит в адреса медиафайлов), quotaBytes — лимит места (0 — без лимита).
-  constructor({ dataDir, builtinDir, libId = 'local', quotaBytes = 0 }) {
+  // libId — идентификатор библиотеки (входит в адреса медиафайлов), quotaBytes — лимит места (0 — без лимита),
+  // serverCheck(extraBytes) — общая проверка места на сервере (для сервера комнат).
+  constructor({ dataDir, builtinDir, libId = 'local', quotaBytes = 0, serverCheck = null }) {
     this.userDir = path.join(dataDir, 'packs')
     this.builtinDir = builtinDir
     this.libId = libId
     this.quotaBytes = quotaBytes
+    this.serverCheck = serverCheck
     fs.mkdirSync(this.userDir, { recursive: true })
   }
 
@@ -150,12 +152,12 @@ export class PackStore {
   }
 
   async checkQuota(extraBytes = 0) {
-    if (!this.quotaBytes) return
-    if ((await this.usage()) + extraBytes > this.quotaBytes) {
+    if (this.quotaBytes && (await this.usage()) + extraBytes > this.quotaBytes) {
       throw new PackError(
         `Не хватает места для пакетов (лимит ${Math.round(this.quotaBytes / 1048576)} МБ). Удалите ненужные пакеты или сделайте их экспорт.`,
       )
     }
+    if (this.serverCheck) await this.serverCheck(extraBytes)
   }
 
   // Где лежит пакет: { dir, builtin } или null.

@@ -28,6 +28,7 @@ export class GameConnection {
   readonly rtt = ref<number | null>(null)
   readonly pings = shallowRef<Record<string, number>>({})
   readonly errorMessage = ref<string | null>(null)
+  readonly errorCode = ref<string | null>(null)
 
   // Смещение серверных часов относительно performance.now() этого устройства.
   offset = 0
@@ -289,6 +290,7 @@ export class GameConnection {
       }
       case 'error':
         this.errorMessage.value = msg.message ?? 'Ошибка'
+        this.errorCode.value = msg.code ?? null
         if (msg.code === 'auth') this.status.value = 'auth'
         if (msg.code === 'room_not_found' || msg.code === 'room_closed') {
           this.status.value = 'noroom'

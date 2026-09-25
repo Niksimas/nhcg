@@ -254,6 +254,7 @@ node server/index.js --rooms --no-open --host 127.0.0.1 --port 3000 \
 | Размер загружаемого файла | 100 МБ | `--max-upload-mb` / `MAX_UPLOAD_MB` |
 | Место под пакеты одного ведущего | 500 МБ | `--library-quota-mb` / `LIBRARY_QUOTA_MB` |
 | Удаление неиспользуемых пакетов | через 90 дней | `--library-ttl-days` / `LIBRARY_TTL_DAYS` |
+| Место под пакеты всех ведущих | 10 ГБ | `--storage-quota-mb` / `STORAGE_QUOTA_MB` |
 | Создание комнат с одного IP | 10 за 10 минут | `--room-create-limit` / `ROOM_CREATE_LIMIT` |
 
 Ещё: перебор кодов комнат ограничен (30 неудачных попыток в минуту с одного IP), медиафайлы пакетов отдаются

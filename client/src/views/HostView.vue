@@ -208,7 +208,7 @@ function fmtTime(ts: number) {
     <!-- Вход по ключу (если панель открыта не на компьютере-сервере) -->
     <div v-if="status === 'noroom'" class="auth center">
       <div class="card auth-card">
-        <h2>Комната не найдена</h2>
+        <h2>{{ conn.errorCode.value === 'room_closed' ? 'Комната закрыта' : 'Комната не найдена' }}</h2>
         <p class="muted">{{ conn.errorMessage.value || 'Комнаты с таким кодом нет или её уже закрыли.' }}</p>
         <a class="btn primary big" href="/">На главную</a>
       </div>

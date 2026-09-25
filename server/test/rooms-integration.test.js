@@ -151,6 +151,39 @@ test('игра по интернету: кнопки открываются у �
   p.close()
 })
 
+test('после перезапуска сервера комната, счёт и игроки на месте', async () => {
+  const first = await startServer(['--rooms'])
+  let second = null
+  try {
+    const res = await fetch(`${first.url}/api/rooms`, json({ ownerToken: 'owner-token-restart-aaaa' }))
+    const room = await res.json()
+    const host = new WsClient(first.port, 'host', { key: room.hostKey }, room.code)
+    await host.open()
+    const p = new WsClient(first.port, 'player', {}, room.code)
+    await p.open()
+    p.send({ t: 'join', name: 'Аня' })
+    const joined = await p.wait((m) => m.t === 'joined')
+    await host.cmd('score.set', { competitorId: joined.playerId, value: 700 })
+    host.close()
+    p.close()
+    await first.stop({ keepData: true })
+
+    second = await startServer(['--rooms'], { dataDir: first.dataDir })
+    const again = new WsClient(second.port, 'player', { token: joined.token }, room.code)
+    const welcome = await again.open()
+    assert.equal(welcome.t, 'welcome')
+    assert.equal(welcome.playerId, joined.playerId, 'игрок узнан по сохранённому токену')
+    await again.waitState((s, me) => me?.score === 700)
+    const host2 = new WsClient(second.port, 'host', { key: room.hostKey }, room.code)
+    assert.equal((await host2.open()).t, 'welcome', 'ключ ведущего прежний')
+    again.close()
+    host2.close()
+  } finally {
+    if (second) await second.stop()
+    else await first.stop()
+  }
+})
+
 test('ограничение частоты создания комнат', async () => {
   // Лимит 5 за 10 минут; 5 комнат уже созданы предыдущими тестами этого файла.
   const res = await fetch(`${srv.url}/api/rooms`, json({ ownerToken: 'owner-token-eeeeeeeeeeee' }))
