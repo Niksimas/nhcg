@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Показ содержимого вопроса/ответа: текст, картинки, звук, видео.
 // variant: screen — большой экран (медиа играет само), host — панель ведущего (с кнопками управления),
-// phone — телефон игрока (звук и видео не воспроизводятся, только подсказка).
+// phone — телефон игрока (звук и видео не воспроизводятся, только подсказка;
+//         при игре через интернет — allowPlay: игрок может включить их сам).
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import type { ContentItem } from '../lib/types'
 import Icon from './Icon.vue'
@@ -13,8 +14,9 @@ const props = withDefaults(
     playing?: boolean | null
     replayKey?: number
     compact?: boolean
+    allowPlay?: boolean
   }>(),
-  { variant: 'host', playing: null, replayKey: 0, compact: false },
+  { variant: 'host', playing: null, replayKey: 0, compact: false, allowPlay: false },
 )
 
 const root = ref<HTMLElement | null>(null)
@@ -79,7 +81,8 @@ defineExpose({ restart })
       <p v-if="item.type === 'text'" class="text">{{ item.text }}</p>
       <img v-else-if="item.type === 'image'" class="image" :src="item.src" alt="" draggable="false" />
       <template v-else-if="item.type === 'audio'">
-        <div v-if="variant === 'phone'" class="hint"><Icon name="music" /> Звучит фрагмент — слушайте</div>
+        <audio v-if="variant === 'phone' && allowPlay" class="player" :src="item.src" controls preload="none" />
+        <div v-else-if="variant === 'phone'" class="hint"><Icon name="music" /> Звучит фрагмент — слушайте</div>
         <div v-else-if="variant === 'screen'" class="audio-visual" :class="{ on: audioPlaying }">
           <Icon name="music" size="3.2em" />
           <div class="eq"><i /><i /><i /><i /><i /></div>
@@ -88,7 +91,8 @@ defineExpose({ restart })
         <audio v-else class="player" :src="item.src" controls preload="metadata" @play="onPlay" @pause="onStop" @ended="onStop" />
       </template>
       <template v-else-if="item.type === 'video'">
-        <div v-if="variant === 'phone'" class="hint"><Icon name="video" /> Смотрите видео на экране</div>
+        <video v-if="variant === 'phone' && allowPlay" class="video" :src="item.src" controls playsinline preload="none" />
+        <div v-else-if="variant === 'phone'" class="hint"><Icon name="video" /> Смотрите видео на экране</div>
         <video
           v-else
           class="video"

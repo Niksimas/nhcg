@@ -32,7 +32,10 @@ const status = computed(() => {
     case 'reading':
       return { text: 'Внимание, вопрос!', cls: 'reading' }
     case 'armed':
-      return { text: 'Время!', cls: 'armed' }
+      // Игра по интернету: сигнал назначен на ближайший момент — до него «Внимание…».
+      return b.value.armedAt != null && props.now < b.value.armedAt
+        ? { text: 'Внимание…', cls: 'reading' }
+        : { text: 'Время!', cls: 'armed' }
     case 'answering':
       return { text: `Отвечает: ${nameOf(answeringId.value)}`, cls: 'answering' }
     case 'reveal':

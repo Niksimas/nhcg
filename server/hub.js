@@ -1,34 +1,53 @@
-// WebSocket-хаб: подключения ведущего, экранов и игроков; рассылка состояния; синхронизация часов.
+// WebSocket-хаб одной комнаты: подключения ведущего, экранов и игроков; рассылка состояния; синхронизация часов.
 import { WebSocketServer, WebSocket } from 'ws'
 import { GameError } from './game/util.js'
 
 const HELLO_TIMEOUT = 10_000
 const DEAD_TIMEOUT = 12_000
 const HEARTBEAT = 2_000
+const MSG_PER_SECOND = 40 // больше — игнорируем (защита от засорения канала)
+const MSG_HARD_LIMIT = 200 // больше — отключаем клиента
 
 export class Hub {
-  // opts: { game, hostKey, isLocalRequest(req), serverInfo() }
-  constructor({ game, hostKey, isLocalRequest, serverInfo }) {
+  // opts: { game, hostKey, isLocalRequest(req), serverInfo(), roomInfo(), onActivity(), onHostConnect(req) }
+  constructor({ game, hostKey, isLocalRequest, serverInfo, roomInfo, onActivity, onHostConnect }) {
     this.game = game
     this.hostKey = hostKey
     this.isLocalRequest = isLocalRequest
     this.serverInfo = serverInfo
+    this.roomInfo = roomInfo ?? (() => null)
+    this.onActivity = onActivity ?? (() => {})
+    this.onHostConnect = onHostConnect ?? (() => {})
     this.wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024, perMessageDeflate: false })
     this.clients = new Set()
     this.flushScheduled = false
+    this.closed = false
     this.lastPingsJson = ''
-    game.on('change', () => this.scheduleFlush())
-    game.on('event', (e) => this.broadcastEvent(e))
-    game.on('kick', (playerId) => this.kick(playerId))
+    this.listeners = {
+      change: () => this.scheduleFlush(),
+      event: (e) => this.broadcastEvent(e),
+      kick: (playerId) => this.kick(playerId),
+    }
+    for (const [name, fn] of Object.entries(this.listeners)) game.on(name, fn)
     this.heartbeatTimer = setInterval(() => this.heartbeat(), HEARTBEAT)
     this.pingsTimer = setInterval(() => this.sendPings(), 3000)
   }
 
   close() {
+    this.closed = true
     clearInterval(this.heartbeatTimer)
     clearInterval(this.pingsTimer)
+    for (const [name, fn] of Object.entries(this.listeners)) this.game.off(name, fn)
     for (const c of this.clients) c.ws.terminate()
     this.wss.close()
+  }
+
+  // Комнату закрыли: сообщаем всем и отключаем.
+  closeAll(code, message) {
+    for (const c of this.clients) {
+      this.send(c, { t: 'error', code, message })
+      c.ws.close(4004, code)
+    }
   }
 
   handleUpgrade(req, socket, head) {
@@ -38,21 +57,25 @@ export class Hub {
   onConnection(ws, req) {
     const client = {
       ws,
+      req,
       role: null,
       playerId: null,
       isLocal: this.isLocalRequest(req),
       pingAt: 0,
       rtt: null,
       lastBuzz: 0,
+      msgWindow: 0,
+      msgCount: 0,
     }
     this.clients.add(client)
+    this.onActivity()
     client.helloTimer = setTimeout(() => {
       if (!client.role) ws.close(4000, 'hello timeout')
     }, HELLO_TIMEOUT)
 
     ws.on('message', (data, isBinary) => {
       const arrival = this.game.now()
-      if (isBinary) return
+      if (isBinary || !this.allowMessage(client, arrival)) return
       let msg
       try {
         msg = JSON.parse(data.toString())
@@ -60,6 +83,7 @@ export class Hub {
         return
       }
       if (!msg || typeof msg !== 'object' || typeof msg.t !== 'string') return
+      if (msg.t !== 'sync') this.onActivity()
       try {
         this.onMessage(client, msg, arrival)
       } catch (err) {
@@ -76,9 +100,23 @@ export class Hub {
     ws.on('error', () => {})
   }
 
+  allowMessage(client, now) {
+    if (now - client.msgWindow >= 1000) {
+      client.msgWindow = now
+      client.msgCount = 0
+    }
+    client.msgCount++
+    if (client.msgCount > MSG_HARD_LIMIT) {
+      client.ws.terminate()
+      return false
+    }
+    return client.msgCount <= MSG_PER_SECOND
+  }
+
   onClose(client) {
     clearTimeout(client.helloTimer)
     this.clients.delete(client)
+    this.onActivity()
     if (client.playerId) this.game.detach(client.playerId)
     if (client.role === 'screen' || client.role === 'host') this.scheduleFlush()
   }
@@ -150,7 +188,13 @@ export class Hub {
     }
 
     if (client.role === 'host' && msg.t === 'cmd') {
-      const result = game.hostCommand(String(msg.name ?? ''), msg.args)
+      const name = String(msg.name ?? '')
+      if (name === 'player.promote') {
+        this.promote(msg.args)
+        this.ack(client, msg)
+        return
+      }
+      const result = game.hostCommand(name, msg.args)
       if (result && typeof result.then === 'function') {
         result.then(
           () => this.ack(client, msg),
@@ -173,6 +217,7 @@ export class Hub {
         return
       }
       client.role = 'host'
+      this.onHostConnect(client.req)
     } else if (role === 'screen') {
       client.role = 'screen'
     } else if (role === 'player') {
@@ -189,6 +234,7 @@ export class Hub {
       role: client.role,
       playerId: client.playerId,
       serverTime: this.game.now(),
+      room: this.roomInfo(),
     })
     this.pingNow(client)
     this.sendState(client)
@@ -225,6 +271,26 @@ export class Hub {
     }
   }
 
+  // Ведущий делает подключённое устройство игрока вторым пультом ведущего или экраном для зрителей.
+  promote(args) {
+    const playerId = args?.playerId
+    const role = args?.role === 'screen' ? 'screen' : args?.role === 'host' ? 'host' : null
+    if (!role) throw new GameError('Неизвестная роль')
+    const player = this.game.player(playerId)
+    if (!player) throw new GameError('Игрок не найден')
+    const targets = [...this.clients].filter((c) => c.playerId === playerId)
+    if (!targets.length) throw new GameError('Устройство игрока сейчас не в сети')
+    for (const c of targets) {
+      // Отвязываем устройство от игрока заранее, чтобы оно не получило сообщение «вас удалили».
+      c.playerId = null
+      this.send(c, { t: 'promote', role, hostKey: role === 'host' ? this.hostKey : null })
+    }
+    this.game.removePlayer(
+      playerId,
+      role === 'host' ? `${player.name}: устройство стало пультом ведущего` : `${player.name}: устройство стало экраном`,
+    )
+  }
+
   kick(playerId) {
     for (const c of this.clients) {
       if (c.playerId !== playerId) continue
@@ -246,6 +312,7 @@ export class Hub {
 
   // Пинги игроков — только ведущему, отдельно от состояния (чтобы не рассылать всё каждые 2 секунды).
   sendPings() {
+    if (!this.clients.size) return
     const pings = {}
     for (const p of this.game.state.players) {
       const v = this.game.pingOf(p.id)
@@ -273,7 +340,7 @@ export class Hub {
   }
 
   scheduleFlush() {
-    if (this.flushScheduled) return
+    if (this.flushScheduled || this.closed) return
     this.flushScheduled = true
     setImmediate(() => this.flush())
   }
@@ -281,7 +348,7 @@ export class Hub {
   buildPayloads() {
     const views = this.game.buildViews()
     const info = this.serverInfo()
-    const extra = { joinUrl: info.joinUrl, ...this.counts() }
+    const extra = { joinUrl: info.joinUrl, room: this.roomInfo(), ...this.counts() }
     const pub = JSON.stringify({ ...views.pub, ...extra })
     const host = JSON.stringify({ t: 'state', s: { ...views.host, ...extra, server: info } })
     return { views, pub, host }
@@ -289,7 +356,7 @@ export class Hub {
 
   flush() {
     this.flushScheduled = false
-    if (!this.clients.size) return
+    if (!this.clients.size || this.closed) return
     const { views, pub, host } = this.buildPayloads()
     for (const c of this.clients) this.sendPayload(c, views, pub, host)
   }

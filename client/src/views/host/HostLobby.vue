@@ -6,11 +6,21 @@ import { plural } from '../../lib/util'
 import QrCode from '../../components/QrCode.vue'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
+import { formatCode, roomPath } from '../../lib/room'
 
 const { state, run, openPacks, openJoin } = useHost()
 const s = computed(() => state.value!)
-const url = computed(() => s.value.joinUrl.replace(/^http:\/\//, '').replace(/\/$/, ''))
+const url = computed(() => s.value.joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))
 const connected = computed(() => s.value.players.filter((p) => p.connected).length)
+const code = computed(() => (s.value.room?.mode === 'rooms' ? s.value.room.code : null))
+const lan = computed(() => /^http:\/\/\d+\.\d+\.\d+\.\d+/.test(s.value.joinUrl))
+const site = computed(() => {
+  try {
+    return new URL(s.value.joinUrl).host
+  } catch {
+    return url.value
+  }
+})
 const newTeam = ref('')
 
 const MODES: { id: Mode; title: string; text: string }[] = [
@@ -50,7 +60,7 @@ async function start() {
 }
 
 function openScreen() {
-  window.open('/screen', 'quiz-screen', 'width=1280,height=720')
+  window.open(roomPath('/screen'), 'quiz-screen', 'width=1280,height=720')
 }
 </script>
 
@@ -63,8 +73,17 @@ function openScreen() {
           <QrCode :text="s.joinUrl" />
         </button>
         <div class="join-text">
-          <p>Телефоны должны быть в <b>той же Wi-Fi сети</b>, что и этот компьютер. Отсканируйте QR-код или откройте адрес:</p>
-          <div class="url">{{ url }}</div>
+          <template v-if="code">
+            <p>
+              {{ lan ? 'Телефоны в той же Wi-Fi сети открывают' : 'Игроки открывают на телефонах' }} <b>{{ site }}</b> и вводят код
+              комнаты (или сканируют QR-код):
+            </p>
+            <div class="url code nums">{{ formatCode(code) }}</div>
+          </template>
+          <template v-else>
+            <p>Телефоны должны быть в <b>той же Wi-Fi сети</b>, что и этот компьютер. Отсканируйте QR-код или откройте адрес:</p>
+            <div class="url">{{ url }}</div>
+          </template>
           <p class="muted">
             Подключено: <b>{{ connected }}</b> {{ plural(connected, 'игрок', 'игрока', 'игроков') }}.
             Игроки могут нажать кнопку — их имя мигнёт в списке слева.
@@ -189,6 +208,10 @@ function openScreen() {
   color: var(--accent);
   margin-bottom: 8px;
   word-break: break-all;
+}
+.url.code {
+  font-size: 2.4rem;
+  letter-spacing: 0.08em;
 }
 .modes {
   display: grid;

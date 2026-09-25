@@ -1,0 +1,41 @@
+# Сервер для игры через интернет: приложение + Caddy (автоматический HTTPS-сертификат).
+#
+# 1. Направьте домен (A-запись) на IP сервера, откройте порты 80 и 443.
+# 2. Скопируйте .env.example в .env и впишите домен.
+# 3. docker compose up -d
+#
+# Игра будет доступна по адресу https://ваш-домен/
+services:
+  quiz:
+    build: .
+    restart: unless-stopped
+    environment:
+      PUBLIC_URL: https://${QUIZ_DOMAIN:?укажите QUIZ_DOMAIN в файле .env}
+      TRUST_PROXY: '1'
+      MAX_ROOMS: ${MAX_ROOMS:-500}
+      ROOM_TTL_HOURS: ${ROOM_TTL_HOURS:-12}
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
+      LIBRARY_QUOTA_MB: ${LIBRARY_QUOTA_MB:-500}
+    volumes:
+      - quiz-data:/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - quiz
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    environment:
+      QUIZ_DOMAIN: ${QUIZ_DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  quiz-data:
+  caddy-data:
+  caddy-config:

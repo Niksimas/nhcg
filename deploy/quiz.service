@@ -1,0 +1,20 @@
+# systemd: автозапуск сервера комнат без Docker.
+#   sudo cp deploy/quiz.service /etc/systemd/system/ && sudo systemctl enable --now quiz
+# Папка программы — /opt/quiz (npm ci && npm run build выполнены заранее), данные — /var/lib/quiz.
+[Unit]
+Description=Своя игра · Брейн-ринг (сервер комнат)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/quiz
+ExecStart=/usr/bin/node server/index.js --rooms --no-open --host 127.0.0.1 --port 3000 --data /var/lib/quiz --trust-proxy --public-url https://quiz.example.ru
+Restart=always
+RestartSec=3
+User=quiz
+Group=quiz
+StateDirectory=quiz
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target

@@ -93,7 +93,7 @@ useConnMessage(conn, 'event', (msg) => {
   const name: string = msg.name
   const data = msg.data ?? {}
   const snd = soundForEvent(name, data)
-  if (snd) sound.play(snd)
+  if (snd) sound.play(snd, typeof data.at === 'number' ? data.at - conn.serverNow() : 0)
   if (CLEARS_OVERLAY.has(name)) {
     overlay.value = null
     clearTimeout(overlayTimer)
@@ -181,7 +181,7 @@ const mode = computed(() => state.value?.mode)
 
       <div v-if="showQr && state.stage !== 'lobby'" class="corner-qr">
         <QrCode :text="state.joinUrl" />
-        <div class="corner-url">{{ state.joinUrl.replace(/^http:\/\//, '').replace(/\/$/, '') }}</div>
+        <div class="corner-url">{{ state.joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, '') }}</div>
       </div>
     </template>
 

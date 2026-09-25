@@ -1,0 +1,5 @@
+# Caddy сам получает и продлевает HTTPS-сертификат и пропускает WebSocket.
+{$QUIZ_DOMAIN} {
+	encode zstd gzip
+	reverse_proxy quiz:3000
+}

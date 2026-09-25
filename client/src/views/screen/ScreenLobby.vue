@@ -3,11 +3,23 @@ import { computed } from 'vue'
 import type { GameState } from '../../lib/types'
 import { plural, textOn } from '../../lib/util'
 import QrCode from '../../components/QrCode.vue'
+import { formatCode } from '../../lib/room'
 
 const props = defineProps<{ state: GameState; flash: Record<string, number> }>()
 
 const title = computed(() => (props.state.mode === 'brainring' ? 'Брейн-ринг' : 'Своя игра'))
-const url = computed(() => props.state.joinUrl.replace(/^http:\/\//, '').replace(/\/$/, ''))
+const url = computed(() => props.state.joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))
+// Сервер комнат: игроки вводят код на главной странице сайта.
+const code = computed(() => (props.state.room?.mode === 'rooms' ? props.state.room.code : null))
+const site = computed(() => {
+  try {
+    return new URL(props.state.joinUrl).host
+  } catch {
+    return url.value
+  }
+})
+// Адрес в локальной сети — значит, телефоны должны быть в той же Wi-Fi сети.
+const lan = computed(() => /^http:\/\/\d+\.\d+\.\d+\.\d+/.test(props.state.joinUrl))
 const teamMode = computed(() => props.state.settings.teamMode)
 const playersByTeam = computed(() =>
   props.state.teams.map((t) => ({ team: t, players: props.state.players.filter((p) => p.teamId === t.id) })),
@@ -21,7 +33,14 @@ const count = computed(() => props.state.players.length)
     <h1 class="title">{{ title }}</h1>
     <div class="join">
       <QrCode :text="state.joinUrl" class="qr" />
-      <div class="how">
+      <div v-if="code" class="how">
+        <p class="step">{{ lan ? '1. Подключитесь к той же Wi-Fi сети и откройте' : '1. Откройте на телефоне' }}</p>
+        <p class="url">{{ site }}</p>
+        <p class="step">2. Введите код комнаты</p>
+        <p class="url code nums">{{ formatCode(code) }}</p>
+        <p class="step">3. Или просто наведите камеру на QR-код</p>
+      </div>
+      <div v-else class="how">
         <p class="step">1. Подключитесь к <b>той же Wi-Fi сети</b></p>
         <p class="step">2. Наведите камеру на QR-код или откройте в браузере:</p>
         <p class="url">{{ url }}</p>
@@ -112,6 +131,11 @@ const count = computed(() => props.state.players.length)
   font-weight: 900;
   color: var(--accent);
   letter-spacing: 0.02em;
+}
+.url.code {
+  font-size: clamp(2.4rem, 6vw, 5.5rem);
+  letter-spacing: 0.1em;
+  line-height: 1.05;
 }
 .players {
   width: 100%;

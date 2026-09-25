@@ -2,11 +2,27 @@
 // Настройки игры. Каждое изменение сразу отправляется на сервер.
 import { computed } from 'vue'
 import type { Settings } from '../../lib/types'
+import { api } from '../../lib/api'
+import { forgetRoom, formatCode } from '../../lib/room'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 
-const { state, run } = useHost()
+const { state, run, toast } = useHost()
 const st = computed(() => state.value!.settings)
+const roomCode = computed(() => (state.value?.room?.mode === 'rooms' ? state.value.room.code : null))
+
+async function closeRoom() {
+  const code = roomCode.value
+  if (!code) return
+  if (!confirm(`Закрыть комнату ${formatCode(code)}? Игра и счёт будут удалены, все устройства отключатся. Пакеты вопросов останутся в вашей библиотеке.`)) return
+  try {
+    await api('DELETE', '')
+    forgetRoom(code)
+    location.href = '/'
+  } catch (e) {
+    toast((e as Error).message, 'err')
+  }
+}
 
 function set<K extends keyof Settings>(key: K, value: Settings[K]) {
   void run('settings.update', { patch: { [key]: value } })
@@ -47,6 +63,23 @@ async function newGame(keepPlayers: boolean) {
       <label class="check">
         <input type="checkbox" :checked="st.hideAnswerOnHost" @change="bool('hideAnswerOnHost', $event)" />
         Скрывать ответ на панели ведущего (виден при наведении) — если игроки видят ваш экран
+      </label>
+    </section>
+
+    <section>
+      <h4>Подключение игроков</h4>
+      <label class="check">
+        <input type="checkbox" :checked="st.onlineMode" @change="bool('onlineMode', $event)" />
+        <span>
+          Игроки в разных местах (игра через интернет)
+          <span class="muted">
+            — кнопки загораются у всех одновременно через полсекунды после команды, допуски на задержку связи больше
+          </span>
+        </span>
+      </label>
+      <label class="check">
+        <input type="checkbox" :checked="st.joinLocked" @change="bool('joinLocked', $event)" />
+        <span>Закрыть вход для новых игроков <span class="muted">(вернуться под своим именем можно)</span></span>
       </label>
     </section>
 
@@ -146,6 +179,17 @@ async function newGame(keepPlayers: boolean) {
         <button class="btn bad" @click="newGame(false)"><Icon name="trash" /> Сбросить всё</button>
       </div>
     </section>
+
+    <section v-if="roomCode">
+      <h4>Комната {{ formatCode(roomCode) }}</h4>
+      <p class="muted note">
+        Комната удаляется сама, если в ней долго никого нет. Пакеты вопросов хранятся в вашей библиотеке и доступны в новых
+        комнатах, созданных в этом браузере.
+      </p>
+      <div class="row wrap">
+        <button class="btn bad" @click="closeRoom"><Icon name="logout" /> Закрыть комнату</button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -166,6 +210,10 @@ h4 {
   font-size: 1rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+.note {
+  margin: 0;
+  font-size: 0.9rem;
 }
 .grid {
   display: grid;

@@ -1,19 +1,30 @@
 <script setup lang="ts">
-// Как подключиться: крупный QR-код, выбор сетевого адреса, подсказки на случай проблем.
+// Как подключиться: крупный QR-код, код комнаты, выбор сетевого адреса, подсказки на случай проблем.
 import { computed } from 'vue'
 import QrCode from '../../components/QrCode.vue'
+import { formatCode } from '../../lib/room'
 import { useHost } from './ctx'
 
 const { state, run } = useHost()
 const s = computed(() => state.value!)
 const server = computed(() => s.value.server)
-const current = computed(() => {
-  const m = /^http:\/\/([^/:]+)/.exec(s.value.joinUrl)
-  return m?.[1] ?? ''
+const rooms = computed(() => s.value.room?.mode === 'rooms')
+const code = computed(() => s.value.room?.code ?? '')
+const site = computed(() => {
+  try {
+    return new URL(s.value.joinUrl).host
+  } catch {
+    return ''
+  }
 })
+// Игроки подключаются по адресу в локальной сети (http://192.168.…) — нужны подсказки про Wi-Fi.
+const lanIp = computed(() => /^http:\/\/(\d+\.\d+\.\d+\.\d+)(:\d+)?\//.exec(s.value.joinUrl)?.[1] ?? '')
 
 function choose(address: string) {
   void run('settings.update', { patch: { joinAddress: address } })
+}
+function setOnline(ev: Event) {
+  void run('settings.update', { patch: { onlineMode: (ev.target as HTMLInputElement).checked } })
 }
 </script>
 
@@ -21,28 +32,46 @@ function choose(address: string) {
   <div class="join">
     <div class="main">
       <QrCode class="qr" :text="s.joinUrl" />
-      <div class="url">{{ s.joinUrl }}</div>
+      <template v-if="rooms">
+        <div class="code-line">
+          <span class="muted">Код комнаты</span>
+          <b class="code-big nums">{{ formatCode(code) }}</b>
+        </div>
+        <div class="muted center-text">
+          Игроки открывают <b class="site">{{ site }}</b> и вводят код — или сканируют QR-код.
+        </div>
+        <div class="url-small">{{ s.joinUrl }}</div>
+      </template>
+      <div v-else class="url">{{ s.joinUrl }}</div>
     </div>
 
-    <div v-if="server && server.addresses.length > 1" class="field">
+    <label class="check">
+      <input type="checkbox" :checked="s.settings.onlineMode" @change="setOnline" />
+      <span>
+        Игроки в разных местах (через интернет)
+        <span class="muted">— кнопки загораются у всех одновременно, допуски на задержку связи больше</span>
+      </span>
+    </label>
+
+    <div v-if="lanIp && server && server.addresses.length > 1" class="field">
       <span>У компьютера несколько сетей. Выберите ту, к которой подключены телефоны:</span>
       <div class="addrs">
         <button
           v-for="a in server.addresses"
           :key="a.address"
           class="btn small"
-          :class="{ primary: a.address === current }"
+          :class="{ primary: a.address === lanIp }"
           @click="choose(a.address)"
         >
           {{ a.address }} <span class="faint">({{ a.name }})</span>
         </button>
       </div>
     </div>
-    <p v-if="server && !server.addresses.length" class="warn">
+    <p v-if="lanIp && server && !server.addresses.length" class="warn">
       Компьютер не подключён ни к одной сети. Подключитесь к Wi-Fi или включите на компьютере мобильный хот-спот.
     </p>
 
-    <details class="help">
+    <details v-if="lanIp" class="help">
       <summary>Телефоны не подключаются?</summary>
       <ul>
         <li>Телефоны и компьютер должны быть в <b>одной</b> Wi-Fi сети. Гостевые сети роутеров часто запрещают устройствам «видеть» друг друга — используйте основную сеть.</li>
@@ -54,6 +83,19 @@ function choose(address: string) {
         <li>Нет роутера? Включите на компьютере «Мобильный хот-спот» и подключите к нему телефоны.</li>
         <li>Мобильный интернет на телефоне не мешает, но телефон должен быть подключён именно к этой Wi-Fi сети.</li>
         <li>Адрес вводите точно, начиная с <b>http://</b> (не https).</li>
+        <li>Игроки в разных городах? Нужен сервер в интернете или туннель — см. раздел «Игра через интернет» в README.</li>
+      </ul>
+    </details>
+    <details v-else class="help">
+      <summary>Как играть через интернет</summary>
+      <ul>
+        <li>Игрокам нужен только интернет на телефоне и этот код. Включите «Игроки в разных местах».</li>
+        <li>
+          Вопросы читайте голосом в видеозвонке (Zoom, Telegram, Discord…) или покажите экран для зрителей через
+          демонстрацию экрана: кнопка «Экран» вверху.
+        </li>
+        <li>Кнопки загораются у всех одновременно по сигналу на телефоне, а не по голосу ведущего — задержка видеосвязи у всех разная.</li>
+        <li>Если кто-то нажимает «до сигнала» — у него «Рано!» (Своя игра) или фальстарт (Брейн-ринг), как и в зале.</li>
       </ul>
     </details>
 
@@ -64,6 +106,7 @@ function choose(address: string) {
         <div>
           <p class="muted small">Откройте этот адрес на устройстве ведущего. Не показывайте его игрокам — через него видны ответы.</p>
           <code class="code">{{ server.hostUrl }}</code>
+          <p class="muted small">Ключ ведущего: <b class="nums">{{ server.hostKey }}</b></p>
         </div>
       </div>
     </div>
@@ -91,6 +134,29 @@ function choose(address: string) {
   color: var(--accent);
   text-align: center;
   word-break: break-all;
+}
+.code-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.code-big {
+  font-size: 2.6rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+}
+.center-text {
+  text-align: center;
+}
+.site {
+  color: var(--text);
+}
+.url-small {
+  font-size: 0.85rem;
+  color: var(--faint);
+  word-break: break-all;
+  text-align: center;
 }
 .addrs {
   display: flex;

@@ -1,7 +1,10 @@
 <script setup lang="ts">
 // Экран игрока на телефоне: вход в игру и большая кнопка.
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { GameConnection } from '../lib/connection'
+import { setHostKey } from '../lib/api'
+import { formatCode, room, roomKey, roomPath, serverMeta } from '../lib/room'
 import { SoundEngine } from '../lib/sound'
 import type { ContentItem } from '../lib/types'
 import { competitorMap, fmtScore, storage, textOn, TYPE_LABEL, useConnMessage, useServerNow } from '../lib/util'
@@ -15,10 +18,11 @@ import TimerBar from '../components/TimerBar.vue'
 import Modal from '../components/Modal.vue'
 import Icon from '../components/Icon.vue'
 
-const TOKEN = 'quiz.token'
+const TOKEN = roomKey('quiz.token')
 const NAME = 'quiz.name'
 const VIBRO = 'quiz.vibro'
 
+const router = useRouter()
 const conn = new GameConnection('player', () => ({ token: storage.get(TOKEN) }))
 const sound = new SoundEngine('quiz.sound.player')
 const now = useServerNow(conn, 100)
@@ -48,6 +52,7 @@ onUnmounted(() => {
   conn.stop()
   window.removeEventListener('keydown', onKey)
   clearTimeout(toastTimer)
+  clearTimeout(armTimer)
 })
 
 function showToast(text: string) {
@@ -84,6 +89,16 @@ useConnMessage(conn, 'joinError', (msg) => {
 useConnMessage(conn, 'kicked', () => {
   storage.set(TOKEN, null)
   kicked.value = true
+})
+// Ведущий сделал это устройство вторым пультом ведущего или экраном для зрителей.
+useConnMessage(conn, 'promote', (msg) => {
+  storage.set(TOKEN, null)
+  if (msg.role === 'host' && msg.hostKey) {
+    setHostKey(msg.hostKey)
+    void router.replace(roomPath('/host'))
+  } else if (msg.role === 'screen') {
+    void router.replace(roomPath('/screen'))
+  }
 })
 useConnMessage(conn, 'buzzAck', (msg) => {
   if (msg.result === 'test') testOkAt.value = conn.serverNow()
@@ -125,6 +140,20 @@ const jq = computed(() => (jv.value?.stage === 'question' ? jv.value.question : 
 const myComp = computed(() => (me.value?.competitorId ? comps.value.get(me.value.competitorId) ?? null : null))
 const myTeam = computed(() => state.value?.teams.find((t) => t.id === me.value?.teamId) ?? null)
 const nameOf = (id: string | null | undefined) => (id ? comps.value.get(id)?.name ?? '—' : '—')
+
+// При игре по интернету кнопки открываются в назначенный момент — одновременно у всех.
+// До него показываем «Внимание…», а ровно в этот момент — «Жми!».
+const armedSoon = ref(false)
+let armTimer = 0
+watch(
+  () => [state.value?.buzzer.status, state.value?.buzzer.armedAt] as const,
+  ([st, at]) => {
+    clearTimeout(armTimer)
+    const delay = st === 'armed' && typeof at === 'number' ? at - conn.serverNow() : 0
+    armedSoon.value = delay > 0
+    if (delay > 0) armTimer = window.setTimeout(() => (armedSoon.value = false), delay)
+  },
+)
 
 const earlyUntil = computed(() => Math.max(me.value?.earlyLockUntil ?? 0, earlyAckUntil.value))
 const earlyLeft = computed(() => Math.max(0, earlyUntil.value - now.value))
@@ -179,6 +208,9 @@ const button = computed<ButtonState>(() => {
   const open = b.status === 'closed' || b.status === 'armed' || b.status === 'collecting'
   if (open && earlyLeft.value > 0) {
     return { cls: 'early', title: 'Рано!', sub: `Блокировка ${(earlyLeft.value / 1000).toFixed(1)} с`, active: true }
+  }
+  if (b.status === 'armed' && armedSoon.value) {
+    return { cls: 'wait', title: 'Внимание…', sub: 'Кнопка сейчас загорится', active: true }
   }
   if (b.status === 'armed' || b.status === 'collecting') {
     if (m.rank != null || now.value - pressedAt.value < 800) return { cls: 'pressed', title: 'Нажато!', sub: 'Ждём результат…', active: false }
@@ -396,10 +428,23 @@ const pingClass = computed(() => {
 <template>
   <div class="player" :style="{ '--me': me?.color ?? '#4f7bff', '--me-t': textOn(me?.color ?? '#4f7bff') }">
     <!-- Нет подключения и ещё не вошли -->
-    <div v-if="!state && status !== 'online'" class="splash center">
+    <div v-if="status === 'noroom'" class="splash center">
+      <h2>Игра не найдена</h2>
+      <p class="muted">{{ conn.errorMessage.value || 'Комната не найдена или уже закрыта.' }}</p>
+      <p v-if="room.code" class="muted small">Код комнаты: {{ formatCode(room.code) }}</p>
+      <a class="btn primary big" href="/">Ввести другой код</a>
+    </div>
+
+    <div v-else-if="!state && status !== 'online'" class="splash center">
       <div class="spinner" />
       <p>Подключаемся к игре…</p>
-      <p class="muted small">Телефон должен быть в той же Wi-Fi сети, что и компьютер ведущего.</p>
+      <p class="muted small">
+        {{
+          serverMeta.mode === 'rooms'
+            ? 'Проверьте, что телефон подключён к интернету.'
+            : 'Телефон должен быть в той же Wi-Fi сети, что и компьютер ведущего.'
+        }}
+      </p>
     </div>
 
     <!-- Форма входа -->
@@ -434,7 +479,12 @@ const pingClass = computed(() => {
       <section class="info">
         <div v-if="info.top" class="info-top">{{ info.top }}</div>
         <div v-if="info.main" class="info-main">{{ info.main }}</div>
-        <ContentView v-if="info.content && !final" :items="info.content" variant="phone" />
+        <ContentView
+          v-if="info.content && !final"
+          :items="info.content"
+          variant="phone"
+          :allow-play="state?.settings.onlineMode ?? false"
+        />
         <div v-if="info.answer" class="answer">Ответ: <b>{{ info.answer }}</b></div>
         <TimerBar v-if="activeTimer && !final" :timer="activeTimer" :now="now" />
       </section>

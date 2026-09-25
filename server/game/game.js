@@ -5,7 +5,7 @@
 import { EventEmitter } from 'node:events'
 import { performance } from 'node:perf_hooks'
 import { defaultSettings, sanitizeSettings, mergeSettings } from './settings.js'
-import { effectivePressTime, collectWindow, rankPresses, median } from './buzzer.js'
+import { effectivePressTime, collectWindow, rankPresses, median, FAIRNESS, FAIRNESS_ONLINE, syncStartDelay } from './buzzer.js'
 import { GameError, newId, cleanName, isObj, finite } from './util.js'
 import { JeopardyMode } from './jeopardy.js'
 import { BrainRingMode } from './brainring.js'
@@ -269,6 +269,7 @@ export class Game extends EventEmitter {
         existingName: existing.name,
       })
     }
+    if (this.settings.joinLocked) throw new GameError('Ведущий закрыл вход в игру для новых игроков')
     if (this.state.players.length >= MAX_PLAYERS) throw new GameError('Слишком много игроков')
     const resolvedTeam = this.resolveTeam({ teamId, newTeamName })
     const player = {
@@ -305,13 +306,13 @@ export class Game extends EventEmitter {
     this.changed()
   }
 
-  removePlayer(playerId) {
+  removePlayer(playerId, logText = null) {
     const p = this.player(playerId)
     if (!p) throw new GameError('Игрок не найден')
     this.state.players = this.state.players.filter((x) => x !== p)
     delete this.state.scores[p.id]
     this.presence.delete(p.id)
-    this.log(`Игрок ${p.name} удалён`)
+    this.log(logText ?? `Игрок ${p.name} удалён`)
     this.emit('kick', p.id)
     this.changed()
   }
@@ -339,13 +340,28 @@ export class Game extends EventEmitter {
     this.setBuzzer('closed')
   }
 
+  // Открыть кнопки. При игре по интернету — не сразу, а в момент, до которого сигнал успеет дойти
+  // до всех устройств: тогда «Жми!» загорается у всех одновременно. Возвращает момент открытия.
   armBuzzer() {
     this.clearCollect()
     const b = this.state.buzzer
     b.status = 'armed'
-    b.armedAt = this.now()
+    b.armedAt = this.now() + (this.settings.onlineMode ? syncStartDelay(this.connectedRtts()) : 0)
     b.presses = []
     b.winner = null
+    return b.armedAt
+  }
+
+  fairness() {
+    return this.settings.onlineMode ? FAIRNESS_ONLINE : FAIRNESS
+  }
+
+  connectedRtts() {
+    const rtts = []
+    for (const c of this.eligibleCompetitors()) {
+      for (const pid of c.members) if (this.isConnected(pid)) rtts.push(this.pingOf(pid))
+    }
+    return rtts
   }
 
   lockOut(cid) {
@@ -373,11 +389,7 @@ export class Game extends EventEmitter {
   }
 
   collectWindowMs() {
-    const rtts = []
-    for (const c of this.eligibleCompetitors()) {
-      for (const pid of c.members) if (this.isConnected(pid)) rtts.push(this.pingOf(pid))
-    }
-    return collectWindow(rtts)
+    return collectWindow(this.connectedRtts(), this.fairness())
   }
 
   // Нажатие кнопки игроком. claimed — момент нажатия в серверном времени по часам клиента.
@@ -387,7 +399,7 @@ export class Game extends EventEmitter {
     const cid = this.competitorOf(playerId)
     if (!cid) return { result: 'noTeam' }
     const b = this.state.buzzer
-    const t = effectivePressTime({ claimed, arrival, rtt: this.pingOf(playerId) })
+    const t = effectivePressTime({ claimed, arrival, rtt: this.pingOf(playerId) }, this.fairness())
 
     if (b.status === 'test') {
       this.emitEvent('test', { playerId, competitorId: cid })
@@ -470,19 +482,20 @@ export class Game extends EventEmitter {
 
   // ───────────────────────────── таймеры ─────────────────────────────
 
-  startTimer(name, seconds) {
+  // startAt — серверное время старта (по умолчанию сейчас; позже — при синхронном старте онлайн).
+  startTimer(name, seconds, startAt = this.now()) {
     const ms = Math.round((seconds ?? 0) * 1000)
     if (!(ms > 0)) {
       delete this.state.timers[name]
       return
     }
-    this.state.timers[name] = { total: ms, running: true, endsAt: this.now() + ms, remaining: ms }
+    this.state.timers[name] = { total: ms, running: true, endsAt: Math.max(startAt, this.now()) + ms, remaining: ms }
   }
 
   timerRemaining(name) {
     const t = this.state.timers[name]
     if (!t) return 0
-    return t.running ? Math.max(0, t.endsAt - this.now()) : t.remaining
+    return t.running ? Math.min(t.total, Math.max(0, t.endsAt - this.now())) : t.remaining
   }
 
   pauseTimer(name) {
@@ -493,14 +506,14 @@ export class Game extends EventEmitter {
     t.endsAt = null
   }
 
-  resumeTimer(name, remainingMs) {
+  resumeTimer(name, remainingMs, startAt = this.now()) {
     const t = this.state.timers[name]
     if (!t) return
     if (finite(remainingMs)) t.remaining = Math.max(0, remainingMs)
     if (t.remaining > t.total) t.total = t.remaining
     if (t.remaining <= 0) return
     t.running = true
-    t.endsAt = this.now() + t.remaining
+    t.endsAt = Math.max(startAt, this.now()) + t.remaining
   }
 
   addTime(name, seconds) {

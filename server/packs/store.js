@@ -123,10 +123,39 @@ async function moveFile(from, to) {
 }
 
 export class PackStore {
-  constructor({ dataDir, builtinDir }) {
+  // libId — идентификатор библиотеки (входит в адреса медиафайлов), quotaBytes — лимит места (0 — без лимита).
+  constructor({ dataDir, builtinDir, libId = 'local', quotaBytes = 0 }) {
     this.userDir = path.join(dataDir, 'packs')
     this.builtinDir = builtinDir
+    this.libId = libId
+    this.quotaBytes = quotaBytes
     fs.mkdirSync(this.userDir, { recursive: true })
+  }
+
+  // Сколько места занимают пакеты этой библиотеки (байты).
+  async usage(dir = this.userDir) {
+    let total = 0
+    let entries = []
+    try {
+      entries = await fsp.readdir(dir, { withFileTypes: true })
+    } catch {
+      return 0
+    }
+    for (const e of entries) {
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) total += await this.usage(full)
+      else total += (await fsp.stat(full).catch(() => ({ size: 0 }))).size
+    }
+    return total
+  }
+
+  async checkQuota(extraBytes = 0) {
+    if (!this.quotaBytes) return
+    if ((await this.usage()) + extraBytes > this.quotaBytes) {
+      throw new PackError(
+        `Не хватает места для пакетов (лимит ${Math.round(this.quotaBytes / 1048576)} МБ). Удалите ненужные пакеты или сделайте их экспорт.`,
+      )
+    }
   }
 
   // Где лежит пакет: { dir, builtin } или null.
@@ -192,7 +221,10 @@ export class PackStore {
   // Пакет, готовый к игре: пустые темы убраны, у медиа — URL для браузера.
   async loadForGame(id) {
     const pack = await this.read(id)
-    return prepareForGame(pack, (name) => `/media/${encodeURIComponent(id)}/${encodeURIComponent(name)}`)
+    return prepareForGame(
+      pack,
+      (name) => `/media/${this.libId}/${encodeURIComponent(id)}/${encodeURIComponent(name)}`,
+    )
   }
 
   async allocateId(title) {
@@ -225,6 +257,7 @@ export class PackStore {
     const pack = await this.read(id)
     const loc = this.locate(id)
     const title = loc.builtin ? pack.title : `${pack.title} (копия)`
+    await this.checkQuota(await this.usage(path.join(loc.dir, 'media')))
     const newId = await this.allocateId(title)
     const dir = path.join(this.userDir, newId)
     await fsp.mkdir(path.join(dir, 'media'), { recursive: true })
@@ -258,6 +291,8 @@ export class PackStore {
     if (loc.builtin) throw new PackError('Встроенный пакет нельзя изменить — сделайте копию')
     const kind = mediaKind(originalName)
     if (!kind) throw new PackError('Неподдерживаемый тип файла. Можно: картинки, аудио (mp3, ogg, wav, m4a) и видео (mp4, webm)')
+    const size = (await fsp.stat(tmpPath)).size
+    await this.checkQuota(size)
     const dir = path.join(loc.dir, 'media')
     await fsp.mkdir(dir, { recursive: true })
     const used = new Set((await fsp.readdir(dir)).map((n) => n.toLowerCase()))
@@ -283,6 +318,7 @@ export class PackStore {
       }
       const stat = await fsp.stat(filePath)
       if (stat.size > MAX_XML) throw new PackError('Слишком большой JSON-файл')
+      await this.checkQuota(stat.size)
       let raw
       try {
         raw = JSON.parse(bufferToText(await fsp.readFile(filePath)))
@@ -394,6 +430,7 @@ export class PackStore {
   async writeImported(zip, pack, plan) {
     const total = [...plan.keys()].reduce((sum, e) => sum + e.uncompressedSize, 0)
     if (total > MAX_TOTAL) throw new PackError('Медиафайлы пакета слишком большие')
+    await this.checkQuota(total)
     const id = await this.allocateId(pack.title)
     const dir = path.join(this.userDir, id)
     const media = path.join(dir, 'media')

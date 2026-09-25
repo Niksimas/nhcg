@@ -3,6 +3,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { GameConnection } from '../lib/connection'
 import { getHostKey, setHostKey } from '../lib/api'
+import { formatCode, room, roomKey, roomPath, serverMeta } from '../lib/room'
 import { SoundEngine, soundForEvent } from '../lib/sound'
 import type { Mode } from '../lib/types'
 import { storage, timerLeft, useConnMessage, useServerNow } from '../lib/util'
@@ -20,7 +21,7 @@ import HostJoin from './host/HostJoin.vue'
 import { provideHost } from './host/ctx'
 
 const initialKey = getHostKey()
-const conn = new GameConnection('host', () => ({ key: storage.get('quiz.hostKey') ?? initialKey }))
+const conn = new GameConnection('host', () => ({ key: storage.get(roomKey('quiz.hostKey')) ?? initialKey }))
 const sound = new SoundEngine('quiz.sound.host')
 const now = useServerNow(conn, 100)
 const state = conn.state
@@ -87,7 +88,7 @@ useConnMessage(conn, 'event', (msg) => {
   }
   if (!hostPlays.value) return
   const snd = soundForEvent(msg.name, data)
-  if (snd) sound.play(snd)
+  if (snd) sound.play(snd, typeof data.at === 'number' ? data.at - conn.serverNow() : 0)
 })
 
 // Предупреждения таймера «Брейн-ринга», если звук играет здесь.
@@ -183,7 +184,8 @@ function unlockSound() {
 }
 
 const mode = computed<Mode>(() => state.value?.mode ?? 'jeopardy')
-const joinShort = computed(() => (state.value?.joinUrl ?? '').replace(/^http:\/\//, '').replace(/\/$/, ''))
+const joinShort = computed(() => (state.value?.joinUrl ?? '').replace(/^https?:\/\//, '').replace(/\/$/, ''))
+const roomCode = computed(() => (state.value?.room?.mode === 'rooms' ? state.value.room.code : null))
 
 async function switchMode(m: Mode) {
   if (m === mode.value) return
@@ -192,7 +194,7 @@ async function switchMode(m: Mode) {
 }
 
 function openScreen() {
-  window.open('/screen', 'quiz-screen', 'width=1280,height=720')
+  window.open(roomPath('/screen'), 'quiz-screen', 'width=1280,height=720')
 }
 
 const lastLog = computed(() => [...(state.value?.log ?? [])].reverse().slice(0, 30))
@@ -204,17 +206,29 @@ function fmtTime(ts: number) {
 <template>
   <div class="host">
     <!-- Вход по ключу (если панель открыта не на компьютере-сервере) -->
-    <div v-if="status === 'auth'" class="auth center">
+    <div v-if="status === 'noroom'" class="auth center">
+      <div class="card auth-card">
+        <h2>Комната не найдена</h2>
+        <p class="muted">{{ conn.errorMessage.value || 'Комнаты с таким кодом нет или её уже закрыли.' }}</p>
+        <a class="btn primary big" href="/">На главную</a>
+      </div>
+    </div>
+
+    <div v-else-if="status === 'auth'" class="auth center">
       <form class="card auth-card" @submit.prevent="submitKey">
-        <h2>Панель ведущего</h2>
-        <p class="muted">
+        <h2>Панель ведущего{{ room.code && serverMeta.mode === 'rooms' ? ` · комната ${formatCode(room.code)}` : '' }}</h2>
+        <p v-if="serverMeta.mode === 'rooms'" class="muted">
+          Чтобы управлять этой игрой, введите ключ ведущего комнаты. Его видно в панели ведущего на устройстве, где
+          создали комнату: кнопка с QR-кодом → «Управлять игрой с другого устройства».
+        </p>
+        <p v-else class="muted">
           Чтобы управлять игрой с этого устройства, введите ключ ведущего. Он показан в окне сервера (консоли) и в панели
           ведущего на компьютере с игрой: кнопка с QR-кодом → «Управлять игрой с другого устройства».
         </p>
         <input v-model="keyInput" class="input" placeholder="Ключ ведущего" autocapitalize="characters" autocomplete="off" />
         <p v-if="conn.errorMessage.value" class="err">{{ conn.errorMessage.value }}</p>
         <button class="btn primary big" type="submit">Войти</button>
-        <a class="muted small" href="/">Я игрок →</a>
+        <a class="muted small" :href="roomPath()">Я игрок →</a>
       </form>
     </div>
 
@@ -226,6 +240,9 @@ function fmtTime(ts: number) {
       <header class="bar">
         <div class="brand">
           <span class="logo-dot" />
+          <button v-if="roomCode" class="room-chip" title="Код комнаты — игроки вводят его на главной странице сайта" @click="modal = 'join'">
+            <span class="room-lbl">Комната</span> <b class="nums">{{ formatCode(roomCode) }}</b>
+          </button>
           <div class="modes">
             <button class="mode-btn" :class="{ on: mode === 'jeopardy' }" @click="switchMode('jeopardy')">Своя игра</button>
             <button class="mode-btn" :class="{ on: mode === 'brainring' }" @click="switchMode('brainring')">Брейн-ринг</button>
@@ -359,6 +376,26 @@ function fmtTime(ts: number) {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.room-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 1.05rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.room-chip b {
+  letter-spacing: 0.06em;
+}
+.room-lbl {
+  font-size: 0.75rem;
+  color: var(--muted);
 }
 .logo-dot {
   width: 22px;

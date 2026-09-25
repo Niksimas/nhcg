@@ -36,9 +36,10 @@ export function contentText(items: ContentItem[] | null | undefined): string {
     .join(' ')
 }
 
+// Сколько осталось. Если таймер назначен на будущее (синхронный старт по интернету) — показываем полное время.
 export function timerLeft(t: TimerState | undefined | null, now: number): number {
   if (!t) return 0
-  return t.running && t.endsAt != null ? Math.max(0, t.endsAt - now) : Math.max(0, t.remaining)
+  return t.running && t.endsAt != null ? Math.min(t.total, Math.max(0, t.endsAt - now)) : Math.max(0, t.remaining)
 }
 
 export function competitorMap(state: GameState | null): Map<string, Competitor> {

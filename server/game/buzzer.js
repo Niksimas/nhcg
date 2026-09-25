@@ -5,6 +5,8 @@
 // с быстрым. Чтобы подменой времени нельзя было «нажать в прошлом», заявленное время
 // ограничивается измеренной сервером задержкой (RTT) конкретного устройства.
 
+const finite = (v) => typeof v === 'number' && Number.isFinite(v)
+
 export const FAIRNESS = {
   maxCompensation: 300, // мс — больше этого «назад во времени» нажатие не сдвигаем
   slack: 30, // мс — запас на джиттер
@@ -14,7 +16,22 @@ export const FAIRNESS = {
   maxClockError: 5000, // мс — если заявленное время дальше, клиент явно не синхронизирован
 }
 
-const finite = (v) => typeof v === 'number' && Number.isFinite(v)
+// Для игры по интернету задержки больше и нестабильнее — допуски шире.
+export const FAIRNESS_ONLINE = {
+  ...FAIRNESS,
+  maxCompensation: 1000,
+  slack: 60,
+  defaultRtt: 250,
+  maxWindow: 1000,
+}
+
+// Через сколько миллисекунд после команды ведущего открыть кнопки, чтобы сигнал успел дойти
+// до всех устройств и загорелся у всех одновременно (для игры по интернету).
+export function syncStartDelay(rtts) {
+  let worst = 0
+  for (const r of rtts) worst = Math.max(worst, finite(r) ? r : FAIRNESS_ONLINE.defaultRtt)
+  return Math.round(Math.min(1500, Math.max(400, worst + 250)))
+}
 
 // Эффективный (честный) момент нажатия в серверном времени.
 // claimed — время, которое прислал клиент (может отсутствовать), arrival — когда сообщение пришло,

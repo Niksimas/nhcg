@@ -5,6 +5,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, downloadUrl, getHostKey } from '../lib/api'
 import type { Pack, PackQuestion, PackRound, PackTheme, QType } from '../lib/types'
 import { contentText, TYPE_LABEL } from '../lib/util'
+import { roomPath } from '../lib/room'
 import Icon from '../components/Icon.vue'
 import ContentEditor from './editor/ContentEditor.vue'
 
@@ -95,7 +96,7 @@ async function save() {
 async function makeCopy() {
   try {
     const { id } = await api<{ id: string }>('POST', `/packs/${encodeURIComponent(packId.value)}/copy`)
-    await router.replace(`/editor/${encodeURIComponent(id)}`)
+    await router.replace(roomPath(`/editor/${encodeURIComponent(id)}`))
     flash('Создана копия — теперь её можно редактировать')
   } catch (e) {
     flash(`Ошибка: ${(e as Error).message}`)
@@ -104,7 +105,7 @@ async function makeCopy() {
 
 async function playThis() {
   if (dirty.value) await save()
-  window.open('/host', 'quiz-host')
+  window.open(roomPath('/host'), 'quiz-host')
   flash('Выберите этот пакет в панели ведущего: «Пакеты» → «Играть»')
 }
 
@@ -271,7 +272,7 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
 <template>
   <div class="editor">
     <header class="bar">
-      <a class="btn small ghost" href="/host"><Icon name="arrowLeft" /> Панель ведущего</a>
+      <a class="btn small ghost" :href="roomPath('/host')"><Icon name="arrowLeft" /> Панель ведущего</a>
       <div class="grow title-wrap">
         <input v-if="pack" v-model="pack.title" class="input title" :readonly="readonly" placeholder="Название пакета" @input="touch" />
       </div>
@@ -286,7 +287,7 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
 
     <div v-if="error" class="card err-card">
       <p>{{ error }}</p>
-      <a class="btn" href="/host">Вернуться</a>
+      <a class="btn" :href="roomPath('/host')">Вернуться</a>
     </div>
 
     <div v-else-if="!pack" class="muted pad">Загрузка…</div>

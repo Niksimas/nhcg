@@ -129,9 +129,9 @@ export class BrainRingMode {
     this.game.pushUndo('Время!')
     s.stage = 'armed'
     s.armCount = 1
-    this.game.armBuzzer()
-    this.game.startTimer('main', this.settings.brMainTime)
-    this.game.emitEvent('brStart', { resumed: false })
+    const at = this.game.armBuzzer()
+    this.game.startTimer('main', this.settings.brMainTime, at)
+    this.game.emitEvent('brStart', { resumed: false, at })
     return true
   }
 
@@ -179,10 +179,10 @@ export class BrainRingMode {
       if (next > 0) {
         s.stage = 'armed'
         s.armCount += 1
-        this.game.armBuzzer()
-        if (!this.game.state.timers.main) this.game.startTimer('main', next / 1000)
-        else this.game.resumeTimer('main', next)
-        this.game.emitEvent('brStart', { resumed: true })
+        const at = this.game.armBuzzer()
+        if (!this.game.state.timers.main) this.game.startTimer('main', next / 1000, at)
+        else this.game.resumeTimer('main', next, at)
+        this.game.emitEvent('brStart', { resumed: true, at })
         return true
       }
     }

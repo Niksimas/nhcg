@@ -48,7 +48,7 @@ async function startServer(extraArgs = []) {
   const actualPort = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`Сервер не запустился:\n${log}`)), 120000)
     const iv = setInterval(() => {
-      const m = /localhost:(\d+)\/host/.exec(log)
+      const m = /localhost:(\d+)\//.exec(log)
       if (m) {
         clearInterval(iv)
         clearTimeout(timer)
@@ -80,7 +80,8 @@ class Session {
     fs.mkdirSync(path.join(OUT, name), { recursive: true })
   }
 
-  async page(name, options) {
+  // ignore — какие ещё сообщения консоли ожидаемы на этой странице (например, 404 при проверке неверного кода).
+  async page(name, options, ignore = null) {
     const ctx = await this.browser.newContext(options)
     const page = await ctx.newPage()
     this.pages[name] = page
@@ -88,7 +89,8 @@ class Session {
       if (m.type() === 'error' || m.type() === 'warning') {
         const text = m.text()
         // Ожидаемые сообщения браузера, пока сервер перезапускается, ошибками не считаем.
-        if (!/ERR_CONNECTION_REFUSED|favicon/i.test(text)) this.errors.push(`[${name}] ${m.type()}: ${text}`)
+        if (/ERR_CONNECTION_REFUSED|favicon/i.test(text) || ignore?.test(text)) return
+        this.errors.push(`[${name}] ${m.type()}: ${text}`)
       }
     })
     page.on('pageerror', (e) => this.errors.push(`[${name}] pageerror: ${e.message}`))
@@ -356,6 +358,118 @@ async function teamsScenario(browser, step) {
   return s.errors
 }
 
+// ───────────────────────────── Сервер комнат, игра через интернет ─────────────────────────────
+async function roomsScenario(browser, step) {
+  const server = await startServer(['--rooms'])
+  const s = new Session(browser, 'rooms-online')
+  const BASE = server.base
+  try {
+    step('Главная страница и создание комнаты')
+    const host = await s.page('host', { viewport: { width: 1440, height: 900 } })
+    await host.goto(`${BASE}/`)
+    await host.getByRole('heading', { name: 'Провести игру' }).waitFor()
+    await s.shot(host, 'landing-desktop')
+    await host.getByRole('button', { name: /Создать комнату/ }).click()
+    await host.waitForURL(/\/r\/\d{6}\/host$/)
+    const code = /\/r\/(\d{6})\/host/.exec(host.url())[1]
+    await host.getByText('Подключите игроков').waitFor()
+    await host.locator('.room-chip', { hasText: `${code.slice(0, 3)} ${code.slice(3)}` }).waitFor()
+    await s.shot(host, 'host-lobby')
+
+    step('Игроки входят по коду комнаты')
+    const phones = {}
+    for (const [name, device] of [
+      ['Аня', 'Pixel 7'],
+      ['Борис', 'iPhone 13'],
+      ['Вика', 'Pixel 7'],
+    ]) {
+      const p = await s.page(name, { ...devices[device] })
+      await p.goto(`${BASE}/`)
+      await p.locator('.code-input').fill(code)
+      if (name === 'Аня') await s.shot(p, 'phone-landing')
+      await p.getByRole('button', { name: /^Войти/ }).click()
+      await p.waitForURL(new RegExp(`/r/${code}$`))
+      await p.getByPlaceholder('Например, Аня').fill(name)
+      await p.getByRole('button', { name: 'Войти в игру' }).click()
+      await p.locator('.buzzer').waitFor()
+      phones[name] = p
+    }
+    const { Аня: anna, Борис: boris, Вика: vika } = phones
+
+    step('Неверный код и несуществующая комната')
+    const wrong = code === '999999' ? '999998' : '999999'
+    const lost = await s.page('lost', { ...devices['Pixel 7'] }, /status of 404/)
+    await lost.goto(`${BASE}/`)
+    await lost.locator('.code-input').fill(wrong)
+    await lost.getByRole('button', { name: /^Войти/ }).click()
+    await lost.getByText('Комната не найдена').waitFor()
+    await lost.goto(`${BASE}/r/${wrong}`)
+    await lost.getByText('Игра не найдена').waitFor()
+
+    step('Экран для зрителей по коду')
+    const screen = await s.page('screen', { viewport: { width: 1280, height: 720 } })
+    await screen.goto(`${BASE}/`)
+    await screen.locator('.code-input').fill(code)
+    await screen.getByRole('button', { name: /как экран/ }).click()
+    await screen.waitForURL(new RegExp(`/r/${code}/screen$`))
+    await screen.getByRole('button', { name: 'Включить звук' }).click()
+    await screen.locator('.url.code').waitFor()
+    await s.shot(screen, 'screen-lobby')
+
+    step('Режим «Игроки в разных местах»')
+    await host.getByRole('button', { name: /Показать QR крупно/ }).click()
+    await host.getByText('Код комнаты', { exact: true }).waitFor()
+    await host.getByLabel(/Игроки в разных местах/).check()
+    await sleep(300)
+    await s.shot(host, 'host-join-modal')
+    await host.keyboard.press('Escape')
+
+    step('Синхронный старт: «Внимание…», затем «Жми!»')
+    await host.getByRole('button', { name: 'Выбрать пакет' }).click()
+    await host.locator('.pack', { hasText: 'Демо: Своя игра' }).getByRole('button', { name: 'Играть' }).click()
+    await host.getByRole('button', { name: 'Начать игру' }).click()
+    await host.locator('.board').waitFor()
+    await host.locator('.board .cell', { hasText: '100' }).first().click()
+    await host.locator('.q-head').waitFor()
+    await host.keyboard.press('Space')
+    await anna.getByText('Внимание…').waitFor({ timeout: 2000 })
+    await anna.locator('.buzzer.go').waitFor()
+    await tap(anna)
+    await host.locator('.responder', { hasText: 'Аня' }).waitFor()
+    await anna.getByText('Ваш ответ!').waitFor()
+    await host.keyboard.press('Enter')
+    await host.getByText('Ответ показан на экране').waitFor()
+    await host.keyboard.press('Enter')
+    await host.locator('.board').waitFor()
+
+    step('Устройства игроков становятся экраном и пультом ведущего')
+    host.once('dialog', (d) => d.accept())
+    await host.locator('.comp', { hasText: 'Борис' }).getByText('сделать экраном').click()
+    await boris.waitForURL(new RegExp(`/r/${code}/screen$`))
+    await boris.getByText('Экран игры').waitFor()
+    host.once('dialog', (d) => d.accept())
+    await host.locator('.comp', { hasText: 'Вика' }).getByText('сделать ведущим').click()
+    await vika.waitForURL(new RegExp(`/r/${code}/host$`))
+    await vika.locator('.room-chip').waitFor()
+    await s.shot(vika, 'phone-as-host')
+
+    step('Закрытие комнаты')
+    await host.locator('button[title="Настройки"]').click()
+    host.once('dialog', (d) => d.accept())
+    await host.getByRole('button', { name: /Закрыть комнату/ }).click()
+    await host.waitForURL(`${BASE}/`)
+    await host.getByRole('heading', { name: 'Провести игру' }).waitFor()
+    await anna.getByText('Игра не найдена').waitFor()
+    await s.shot(anna, 'phone-room-closed')
+  } catch (err) {
+    await s.failShots()
+    throw err
+  } finally {
+    await server.stop()
+  }
+  return s.errors
+}
+
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || undefined,
   args: ['--autoplay-policy=no-user-gesture-required'],
@@ -364,7 +478,9 @@ let failed = false
 for (const [title, scenario] of [
   ['«Своя игра»', jeopardyScenario],
   ['«Брейн-ринг» в командах', teamsScenario],
+  ['Комнаты и игра через интернет', roomsScenario],
 ]) {
+  if (process.env.E2E_ONLY && !title.includes(process.env.E2E_ONLY)) continue
   console.log(`\n${title}`)
   try {
     const errors = await scenario(browser, (t) => console.log(`  • ${t}`))

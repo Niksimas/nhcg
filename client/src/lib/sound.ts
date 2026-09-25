@@ -78,9 +78,10 @@ export class SoundEngine {
     osc.stop(start + dur + 0.05)
   }
 
-  play(name: SoundName) {
+  // delayMs — сыграть позже (например, в момент синхронного открытия кнопок).
+  play(name: SoundName, delayMs = 0) {
     if (!this.enabled.value || !this.ctx || this.ctx.state !== 'running') return
-    const t = this.ctx.currentTime + 0.01
+    const t = this.ctx.currentTime + 0.01 + Math.max(0, Math.min(3000, delayMs)) / 1000
     const seq = (notes: number[], step: number, dur: number, wave: Wave = 'triangle', vol = 0.28) =>
       notes.forEach((f, i) => this.tone(f, t + i * step, dur, wave, vol))
     switch (name) {

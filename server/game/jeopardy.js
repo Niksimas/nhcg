@@ -217,9 +217,9 @@ export class JeopardyMode {
     if (s.stage !== 'question' || !q || q.step !== 'reading') throw new GameError('Сейчас нельзя принимать ответы')
     this.game.pushUndo('Приём ответов')
     q.step = 'buzzing'
-    this.game.armBuzzer()
-    this.game.startTimer('buzz', this.settings.jBuzzTime)
-    this.game.emitEvent('armed')
+    const at = this.game.armBuzzer()
+    this.game.startTimer('buzz', this.settings.jBuzzTime, at)
+    this.game.emitEvent('armed', { at })
     return true
   }
 
@@ -263,8 +263,9 @@ export class JeopardyMode {
         // Остальные могут попробовать ответить.
         q.responderId = null
         q.step = 'buzzing'
-        this.game.armBuzzer()
-        this.game.startTimer('buzz', this.settings.jBuzzTime)
+        const at = this.game.armBuzzer()
+        this.game.startTimer('buzz', this.settings.jBuzzTime, at)
+        this.game.emitEvent('armed', { at, again: true })
         return true
       }
     }

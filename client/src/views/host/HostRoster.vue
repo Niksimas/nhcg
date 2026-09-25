@@ -7,7 +7,7 @@ import { PALETTE_UI } from './palette'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 
-const { state, run, conn, flash } = useHost()
+const { state, run, conn, flash, toast } = useHost()
 
 const s = computed(() => state.value!)
 const teamMode = computed(() => s.value.settings.teamMode)
@@ -80,6 +80,31 @@ async function addTeam() {
   const name = prompt('Название команды', `Команда ${s.value.teams.length + 1}`)
   if (name === null) return
   await run('team.add', { name })
+}
+
+// Устройство игрока становится экраном для зрителей или вторым пультом ведущего.
+async function promote(playerId: string, role: 'host' | 'screen') {
+  const p = s.value.players.find((x) => x.id === playerId)
+  if (!p) return
+  if (!p.connected) {
+    toast('Устройство игрока сейчас не в сети', 'err')
+    return
+  }
+  const text =
+    role === 'host'
+      ? `Сделать устройство игрока «${p.name}» пультом ведущего? Он перестанет быть игроком и увидит ответы.`
+      : `Показывать на устройстве игрока «${p.name}» экран для зрителей? Игрок будет удалён из игры.`
+  if (!confirm(text)) return
+  if (await run('player.promote', { playerId, role })) {
+    toast(role === 'host' ? 'Устройство стало пультом ведущего' : 'Устройство стало экраном для зрителей')
+  }
+}
+
+function onMore(p: PlayerInfo, ev: Event) {
+  const el = ev.target as HTMLSelectElement
+  const role = el.value
+  el.value = ''
+  if (role === 'host' || role === 'screen') void promote(p.id, role)
 }
 
 function setTeam(p: PlayerInfo, teamId: string) {
@@ -206,6 +231,10 @@ const title = computed(() => {
         <button v-if="chooserId !== null && s.mode === 'jeopardy' && c.id !== chooserId" class="link" @click="setChooser(c)">
           сделать выбирающим
         </button>
+        <template v-if="c.kind === 'player' && c.connected">
+          <button class="link" title="Показывать на этом устройстве табло для зрителей" @click="promote(c.id, 'screen')">сделать экраном</button>
+          <button class="link" title="Управлять игрой с этого устройства" @click="promote(c.id, 'host')">сделать ведущим</button>
+        </template>
         <button v-if="c.kind === 'player'" class="link danger" @click="removePlayer(s.players.find((p) => p.id === c.id)!)">удалить</button>
         <button v-else class="link danger" @click="removeTeam(c)">удалить</button>
       </div>
@@ -229,6 +258,11 @@ const title = computed(() => {
             <option value="">без команды</option>
             <option v-for="t in s.teams" :key="t.id" :value="t.id">{{ t.name }}</option>
           </select>
+          <select v-if="p.connected" class="select small more-sel" value="" title="Другие действия" @change="onMore(p, $event)">
+            <option value="" disabled>⋯</option>
+            <option value="screen">Сделать экраном</option>
+            <option value="host">Сделать ведущим</option>
+          </select>
           <button class="btn small flat icon" title="Удалить игрока" @click="removePlayer(p)"><Icon name="x" size="0.85em" /></button>
         </div>
       </div>
@@ -242,6 +276,11 @@ const title = computed(() => {
         <select class="select small team-sel" value="" @change="setTeam(p, ($event.target as HTMLSelectElement).value)">
           <option value="">выбрать…</option>
           <option v-for="t in s.teams" :key="t.id" :value="t.id">{{ t.name }}</option>
+        </select>
+        <select v-if="p.connected" class="select small more-sel" value="" title="Другие действия" @change="onMore(p, $event)">
+          <option value="" disabled>⋯</option>
+          <option value="screen">Сделать экраном</option>
+          <option value="host">Сделать ведущим</option>
         </select>
         <button class="btn small flat icon" title="Удалить игрока" @click="removePlayer(p)"><Icon name="x" size="0.85em" /></button>
       </div>
@@ -440,5 +479,11 @@ const title = computed(() => {
   padding: 8px;
   border-radius: 12px;
   border: 1px dashed var(--line-2);
+}
+.more-sel {
+  width: 2.6em;
+  padding-left: 4px;
+  padding-right: 4px;
+  flex: none;
 }
 </style>

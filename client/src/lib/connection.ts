@@ -1,8 +1,10 @@
 // Подключение к серверу по WebSocket: автопереподключение, синхронизация часов, запросы с ответом.
 import { ref, shallowRef } from 'vue'
 import type { GameState, MeView, Role } from './types'
+import { room, wsPath } from './room'
 
-export type ConnStatus = 'connecting' | 'online' | 'offline' | 'auth'
+// noroom — комнаты нет или её закрыли (переподключаться бессмысленно).
+export type ConnStatus = 'connecting' | 'online' | 'offline' | 'auth' | 'noroom'
 
 interface Sample {
   rtt: number
@@ -42,6 +44,9 @@ export class GameConnection {
   private handlers = new Map<string, Set<Handler>>()
   private pending = new Map<number, Pending>()
   private seq = 0
+
+  // Код комнаты фиксируется при создании: у каждой страницы — своё подключение.
+  readonly roomCode: string | null = room.code
 
   constructor(
     readonly role: Role,
@@ -125,7 +130,7 @@ export class GameConnection {
   }
 
   private onWake = () => {
-    if (this.stopped || document.visibilityState === 'hidden') return
+    if (this.stopped || document.visibilityState === 'hidden' || this.status.value === 'noroom') return
     const ws = this.ws
     if (!ws || ws.readyState === WebSocket.CLOSED || ws.readyState === WebSocket.CLOSING) {
       this.retry = 0
@@ -143,13 +148,13 @@ export class GameConnection {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     let ws: WebSocket
     try {
-      ws = new WebSocket(`${proto}//${location.host}/ws`)
+      ws = new WebSocket(`${proto}//${location.host}${wsPath(this.roomCode)}`)
     } catch {
       this.scheduleReconnect()
       return
     }
     this.ws = ws
-    if (this.status.value !== 'auth') this.status.value = 'connecting'
+    if (!this.isFinal()) this.status.value = 'connecting'
     ws.onopen = () => {
       this.samples = []
       this.lastMessageAt = performance.now()
@@ -168,7 +173,7 @@ export class GameConnection {
     }
     ws.onclose = () => {
       if (this.ws !== ws) return
-      this.dropSocket(this.status.value !== 'auth')
+      this.dropSocket(!this.isFinal())
     }
     ws.onerror = () => {}
   }
@@ -191,14 +196,19 @@ export class GameConnection {
       p.reject(new Error('Нет связи с сервером'))
       this.pending.delete(id)
     }
-    if (this.status.value !== 'auth') this.status.value = 'offline'
+    if (!this.isFinal()) this.status.value = 'offline'
     if (reconnect) this.scheduleReconnect()
   }
 
-  private scheduleReconnect() {
+  // Состояния, из которых не выходим сами: нужен ключ ведущего или комнаты больше нет.
+  private isFinal() {
+    return this.status.value === 'auth' || this.status.value === 'noroom'
+  }
+
+  private scheduleReconnect(minDelay = 0) {
     if (this.stopped) return
     clearTimeout(this.reconnectTimer)
-    const delay = Math.min(3000, 250 * 2 ** this.retry) + Math.random() * 250
+    const delay = Math.max(minDelay, Math.min(3000, 250 * 2 ** this.retry)) + Math.random() * 250
     this.retry++
     this.reconnectTimer = window.setTimeout(() => this.connect(), delay)
   }
@@ -280,6 +290,15 @@ export class GameConnection {
       case 'error':
         this.errorMessage.value = msg.message ?? 'Ошибка'
         if (msg.code === 'auth') this.status.value = 'auth'
+        if (msg.code === 'room_not_found' || msg.code === 'room_closed') {
+          this.status.value = 'noroom'
+          clearTimeout(this.reconnectTimer)
+        }
+        if (msg.code === 'rate_limited') {
+          // Слишком много попыток — подождём подольше.
+          this.dropSocket(false)
+          this.scheduleReconnect(30_000)
+        }
         break
     }
     const set = this.handlers.get(msg.t)

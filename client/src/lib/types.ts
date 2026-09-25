@@ -17,6 +17,8 @@ export interface Settings {
   showQuestionOnPhones: boolean
   phoneSelect: boolean
   hideAnswerOnHost: boolean
+  onlineMode: boolean
+  joinLocked: boolean
   jBuzzTime: number
   jAnswerTime: number
   jWrongPenalty: boolean
@@ -191,12 +193,21 @@ export interface BrainRingView {
 }
 
 export interface ServerInfo {
+  mode: 'local' | 'rooms'
+  code: string
   addresses: { name: string; address: string }[]
+  origin: string | null
   port: number
   joinUrl: string
   hostKey: string
   hostUrl: string
-  dataDir: string
+  dataDir: string | null
+}
+
+export interface RoomInfo {
+  code: string
+  mode: 'local' | 'rooms'
+  isDefault: boolean
 }
 
 export interface GameState {
@@ -212,6 +223,7 @@ export interface GameState {
   jeopardy: JeopardyView | null
   brainring: BrainRingView | null
   joinUrl: string
+  room: RoomInfo | null
   screens: number
   hosts: number
   // только у ведущего

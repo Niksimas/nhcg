@@ -6,6 +6,7 @@ import type { PackSummary } from '../../lib/types'
 import { plural } from '../../lib/util'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
+import { roomPath } from '../../lib/room'
 
 const emit = defineEmits<{ close: [] }>()
 const { state, run, toast } = useHost()
@@ -36,7 +37,7 @@ async function play(p: PackSummary) {
 }
 
 function edit(id: string) {
-  window.open(`/editor/${encodeURIComponent(id)}`, '_blank')
+  window.open(roomPath(`/editor/${encodeURIComponent(id)}`), '_blank')
 }
 
 async function copy(p: PackSummary) {

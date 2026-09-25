@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { effectivePressTime, collectWindow, rankPresses, median } from '../game/buzzer.js'
+import { effectivePressTime, collectWindow, rankPresses, median, syncStartDelay, FAIRNESS_ONLINE } from '../game/buzzer.js'
 
 test('заявленное время используется, если оно правдоподобно', () => {
   assert.equal(effectivePressTime({ claimed: 950, arrival: 1000, rtt: 100 }), 950)
@@ -44,4 +44,19 @@ test('медиана', () => {
   assert.equal(median([3, 1, 2]), 2)
   assert.equal(median([4, 1, 2, 3]), 2.5)
   assert.equal(median([]), null)
+})
+
+test('синхронный старт по интернету: задержка зависит от худшего пинга и ограничена', () => {
+  assert.equal(syncStartDelay([]), 400)
+  assert.equal(syncStartDelay([20, 50]), 400)
+  assert.equal(syncStartDelay([300, 40]), 550)
+  assert.equal(syncStartDelay([null]), 500, 'неизвестный пинг считается как 250 мс')
+  assert.equal(syncStartDelay([5000]), 1500)
+})
+
+test('по интернету допуски шире: большая задержка компенсируется сильнее', () => {
+  const press = { claimed: 10_000, arrival: 10_700, rtt: 800 }
+  assert.equal(effectivePressTime(press), 10_400, 'в локальной сети компенсация не больше 300 мс')
+  assert.equal(effectivePressTime(press, FAIRNESS_ONLINE), 10_000)
+  assert.equal(collectWindow([800], FAIRNESS_ONLINE), 860)
 })

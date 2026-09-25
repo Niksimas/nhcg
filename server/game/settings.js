@@ -9,6 +9,11 @@ export const SETTINGS_SPEC = {
   showQuestionOnPhones: { type: 'bool', def: true },
   phoneSelect: { type: 'bool', def: true },
   hideAnswerOnHost: { type: 'bool', def: false },
+  // Игроки в разных местах (игра по интернету): кнопки открываются синхронно по сигналу на экранах,
+  // а допуск на задержку сети больше.
+  onlineMode: { type: 'bool', def: false },
+  // Вход новых игроков закрыт (вернуться под своим именем по-прежнему можно).
+  joinLocked: { type: 'bool', def: false },
 
   // «Своя игра»
   jBuzzTime: { type: 'int', def: 10, min: 0, max: 600 },

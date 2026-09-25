@@ -1,23 +1,29 @@
 #!/usr/bin/env node
-// Точка входа: запускает HTTP + WebSocket сервер на этом компьютере.
-// Телефоны игроков подключаются к нему через браузер по Wi-Fi.
+// Точка входа: запускает HTTP + WebSocket сервер.
+// Режим «одна игра» (по умолчанию): ведущий — этот компьютер, телефоны игроков подключаются по Wi-Fi.
+// Режим комнат (--rooms): любой создаёт комнату и зовёт игроков по коду — в локальной сети или через интернет.
 import fs from 'node:fs'
 import http from 'node:http'
+import https from 'node:https'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
-import { randomBytes } from 'node:crypto'
 import express from 'express'
+import { WebSocketServer } from 'ws'
 import { loadConfig, HELP } from './config.js'
-import { Game } from './game/game.js'
-import { PackStore } from './packs/store.js'
-import { Hub } from './hub.js'
+import { RoomManager } from './rooms.js'
 import { mountApi, errorHandler } from './http.js'
-import { getLanAddresses, isLocalAddress } from './net.js'
+import { getLanAddresses } from './net.js'
+import { RateLimiter, clientIp } from './ratelimit.js'
 
 const config = loadConfig()
 if (config.help) {
   console.log(HELP)
   process.exit(0)
+}
+if (config.problems.length) {
+  for (const p of config.problems) console.error(p)
+  console.error('Справка по параметрам: npm start -- --help')
+  process.exit(1)
 }
 
 const [major, minor] = process.versions.node.split('.').map(Number)
@@ -26,75 +32,49 @@ if (major < 20 || (major === 20 && minor < 19) || (major === 22 && minor < 12)) 
   process.exit(1)
 }
 
+const version = JSON.parse(fs.readFileSync(path.join(config.root, 'package.json'), 'utf8')).version
 fs.mkdirSync(config.dataDir, { recursive: true })
 
-function loadHostKey(dir) {
-  const file = path.join(dir, 'host-key.txt')
-  try {
-    const key = fs.readFileSync(file, 'utf8').trim()
-    if (/^[A-Z0-9]{6,32}$/.test(key)) return key
-  } catch {
-    // ключа ещё нет
-  }
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-  const key = [...randomBytes(8)].map((b) => alphabet[b % alphabet.length]).join('')
-  fs.writeFileSync(file, `${key}\n`)
-  return key
-}
+const manager = new RoomManager({ config, builtinDir: path.join(config.root, 'server', 'demo-packs') })
+await manager.loadAll()
+if (manager.mode === 'local') await manager.ensureDefaultRoom()
 
-const hostKey = loadHostKey(config.dataDir)
-const store = new PackStore({ dataDir: config.dataDir, builtinDir: path.join(config.root, 'server', 'demo-packs') })
-const statePath = path.join(config.dataDir, 'game-state.json')
-const game = new Game({
-  packStore: store,
-  persist: {
-    save(data) {
-      const tmp = `${statePath}.tmp`
-      fs.writeFileSync(tmp, JSON.stringify(data))
-      fs.renameSync(tmp, statePath)
-    },
-  },
-})
-
-if (fs.existsSync(statePath)) {
+let tlsOptions = null
+if (config.tls) {
   try {
-    await game.restore(JSON.parse(fs.readFileSync(statePath, 'utf8')))
+    tlsOptions = { cert: fs.readFileSync(config.tls.cert), key: fs.readFileSync(config.tls.key) }
   } catch (err) {
-    console.warn('Не удалось восстановить прошлую игру:', err.message)
+    console.error(`Не удалось прочитать сертификат HTTPS: ${err.message}`)
+    process.exit(1)
   }
 }
-
-let port = config.port
-
-function joinUrl() {
-  const addresses = getLanAddresses()
-  const chosen = game.settings.joinAddress
-  const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(chosen)
-  const host = chosen && (!isIp || addresses.some((a) => a.address === chosen)) ? chosen : addresses[0]?.address ?? 'localhost'
-  return `http://${host}${port === 80 ? '' : `:${port}`}/`
-}
-
-function serverInfo() {
-  const url = joinUrl()
-  return {
-    addresses: getLanAddresses().map(({ name, address }) => ({ name, address })),
-    port,
-    joinUrl: url,
-    hostKey,
-    hostUrl: `${url}host?key=${hostKey}`,
-    dataDir: config.dataDir,
-  }
-}
-
-// С этого же компьютера панель ведущего открывается без ключа (если не запрошено иное).
-const isLocalRequest = (req) => !config.requireKey && isLocalAddress(req.socket.remoteAddress)
 
 const app = express()
 app.disable('x-powered-by')
-const server = http.createServer(app)
-const hub = new Hub({ game, hostKey, isLocalRequest, serverInfo })
+const server = tlsOptions ? https.createServer(tlsOptions, app) : http.createServer(app)
 
-mountApi(app, { store, game, hostKey, isLocalRequest })
+// Заголовки безопасности. Referrer-Policy не даёт ключу ведущего из адреса «утечь» на сторонние сайты.
+const APP_CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "media-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "frame-ancestors 'self'",
+].join('; ')
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff')
+  res.set('Referrer-Policy', 'no-referrer')
+  res.set('X-Frame-Options', 'SAMEORIGIN')
+  if (!config.dev && !req.path.startsWith('/media/')) res.set('Content-Security-Policy', APP_CSP)
+  next()
+})
+
+mountApi(app, { manager, config, version })
 
 // Нужно ли пересобрать интерфейс (нет сборки или исходники новее).
 function newestMtime(dir) {
@@ -141,7 +121,7 @@ if (config.dev) {
   await ensureBuilt()
   app.use('/assets', express.static(path.join(config.distDir, 'assets'), { immutable: true, maxAge: '1y', fallthrough: false }))
   app.use(express.static(config.distDir, { index: false }))
-  // Все остальные адреса (/, /host, /screen, /editor/...) — это одностраничное приложение.
+  // Все остальные адреса (/, /host, /r/123456, /r/123456/host...) — это одностраничное приложение.
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next()
     if (req.path.startsWith('/api/') || req.path.startsWith('/media/')) return next()
@@ -151,15 +131,44 @@ if (config.dev) {
 }
 app.use(errorHandler)
 
+// WebSocket: /ws?room=123456 (в режиме одной игры можно без кода — основная комната).
+// Если комнаты нет, всё равно принимаем соединение, чтобы браузер получил понятную ошибку, а не «обрыв связи».
+const rejectWss = new WebSocketServer({ noServer: true, maxPayload: 1024 })
+const wsLookupLimiter = new RateLimiter({ limit: 30, windowMs: 60_000 })
+
+function rejectSocket(req, socket, head, code, message) {
+  rejectWss.handleUpgrade(req, socket, head, (ws) => {
+    ws.on('error', () => {})
+    ws.send(JSON.stringify({ t: 'error', code, message }))
+    ws.close(4004, code)
+  })
+}
+
 server.on('upgrade', (req, socket, head) => {
-  let pathname = ''
+  let url = null
   try {
-    pathname = new URL(req.url, 'http://localhost').pathname
+    url = new URL(req.url, 'http://localhost')
   } catch {
     // некорректный адрес
   }
-  if (pathname === '/ws') hub.handleUpgrade(req, socket, head)
-  else if (!config.dev) socket.destroy()
+  if (url?.pathname !== '/ws') {
+    if (!config.dev) socket.destroy() // в режиме разработки остальные адреса обслуживает Vite (HMR)
+    return
+  }
+  socket.on('error', () => {})
+  const code = url.searchParams.get('room')
+  const ip = clientIp(req, config.trustProxy)
+  if (code && wsLookupLimiter.blocked(ip)) {
+    rejectSocket(req, socket, head, 'rate_limited', 'Слишком много попыток. Подождите минуту.')
+    return
+  }
+  const room = code ? manager.get(code) : manager.defaultRoom
+  if (!room || room.closed) {
+    if (code) wsLookupLimiter.hit(ip)
+    rejectSocket(req, socket, head, 'room_not_found', 'Комната не найдена. Проверьте код.')
+    return
+  }
+  room.hub.handleUpgrade(req, socket, head)
 })
 
 function listen(startPort, attempts = 20) {
@@ -186,6 +195,7 @@ function listen(startPort, attempts = 20) {
   })
 }
 
+let port
 try {
   port = await listen(config.port)
 } catch (err) {
@@ -196,6 +206,16 @@ try {
   )
   process.exit(1)
 }
+manager.port = port
+
+// Давно брошенные комнаты удаляем (только в режиме комнат).
+const sweepTimer = setInterval(() => {
+  const removed = manager.sweep()
+  if (removed) console.log(`Удалено неактивных комнат: ${removed}`)
+  const libs = manager.sweepLibraries()
+  if (libs) console.log(`Удалено забытых библиотек пакетов: ${libs}`)
+}, 5 * 60_000)
+sweepTimer.unref()
 
 function openBrowser(url) {
   const [cmd, args] =
@@ -213,35 +233,60 @@ function openBrowser(url) {
   }
 }
 
-const info = serverInfo()
-const others = info.addresses.slice(1).map((a) => `${a.address} (${a.name})`)
+const proto = manager.protocol
+const local = `${proto}://localhost:${port}`
 const line = '═'.repeat(64)
-console.log(`
+const lan = getLanAddresses()
+const lanUrls = lan.map((a) => `${proto}://${a.address}:${port}/`)
+if (manager.mode === 'local') {
+  const room = manager.defaultRoom
+  const info = manager.serverInfo(room)
+  const others = info.addresses.slice(1).map((a) => `${a.address} (${a.name})`)
+  console.log(`
 ${line}
   Своя игра / Брейн-ринг — сервер запущен${config.dev ? ' (режим разработки)' : ''}
 
-  Панель ведущего (на этом компьютере):  http://localhost:${port}/host
-  Экран для зрителей / проектора:        http://localhost:${port}/screen
+  Панель ведущего (на этом компьютере):  ${local}/host
+  Экран для зрителей / проектора:        ${local}/screen
 
   Игрокам — открыть на телефоне в той же Wi-Fi сети:
       ${info.joinUrl}
       (или отсканировать QR-код в панели ведущего)
-${others.length ? `  Другие адреса этого компьютера: ${others.join(', ')}\n` : ''}${info.addresses.length ? '' : '  ВНИМАНИЕ: компьютер не подключён к локальной сети — телефоны не смогут подключиться.\n'}
-  Ключ ведущего (управление с другого устройства): ${hostKey}
+${others.length ? `  Другие адреса этого компьютера: ${others.join(', ')}\n` : ''}${info.addresses.length || config.publicUrl ? '' : '  ВНИМАНИЕ: компьютер не подключён к локальной сети — телефоны не смогут подключиться.\n'}
+  Ключ ведущего (управление с другого устройства): ${room.hostKey}
   Данные и пакеты: ${config.dataDir}
+  Игра через интернет и комнаты по коду: npm start -- --rooms (см. README)
   Остановить сервер: Ctrl+C
 ${line}
 `)
+} else {
+  console.log(`
+${line}
+  Своя игра / Брейн-ринг — сервер комнат запущен${config.dev ? ' (режим разработки)' : ''}
 
-if (config.open) openBrowser(`http://localhost:${port}/host${config.requireKey ? `?key=${hostKey}` : ''}`)
+  Создать игру или войти по коду:
+      ${config.publicUrl ? `${config.publicUrl}/` : `${local}/`}
+${!config.publicUrl && lanUrls.length ? `      в локальной сети: ${lanUrls.join(', ')}\n` : ''}
+  Комнат сейчас: ${manager.rooms.size} (максимум ${config.maxRooms}, удаляются через ${config.roomTtlHours} ч без игры)
+  Данные: ${config.dataDir}
+  Остановить сервер: Ctrl+C
+${line}
+`)
+}
+
+if (config.open) {
+  const key = manager.mode === 'local' && config.requireKey ? `?key=${manager.defaultRoom.hostKey}` : ''
+  openBrowser(manager.mode === 'local' ? `${local}/host${key}` : `${local}/`)
+}
 
 let stopping = false
 function shutdown() {
   if (stopping) return
   stopping = true
-  console.log('\nСохраняю игру и останавливаю сервер...')
-  game.saveNow()
-  hub.close()
+  console.log('\nСохраняю игры и останавливаю сервер...')
+  clearInterval(sweepTimer)
+  manager.closeAll()
+  rejectWss.close()
   vite?.close()
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 1500).unref()

@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import type { GameState } from '../../lib/types'
 import { textOn } from '../../lib/util'
+import { formatCode, room } from '../../lib/room'
 
 const props = defineProps<{
   state: GameState | null
@@ -50,10 +51,13 @@ function submit(takeover = false) {
     <div class="logo">
       <div class="logo-buzz" />
       <h1>{{ title }}</h1>
-      <p class="muted">Подключение к игре</p>
+      <p class="muted">{{ room.code ? `Комната ${formatCode(room.code)}` : 'Подключение к игре' }}</p>
     </div>
 
     <p v-if="kicked" class="notice">Ведущий удалил вас из игры. Можно войти снова.</p>
+    <p v-if="state?.settings.joinLocked" class="notice">
+      Ведущий закрыл вход для новых игроков. Если вы уже играли — введите своё прежнее имя.
+    </p>
 
     <label class="field">
       <span>Ваше имя</span>

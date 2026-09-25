@@ -19,7 +19,11 @@ const STATUS: Record<string, { text: string; cls: string }> = {
   collecting: { text: 'Определяем первого…', cls: 'armed' },
   answering: { text: 'Идёт ответ', cls: 'answering' },
 }
-const status = computed(() => STATUS[b.value.status] ?? STATUS.off)
+const status = computed(() =>
+  b.value.status === 'armed' && b.value.armedAt != null && now.value < b.value.armedAt
+    ? { text: 'Кнопки сейчас откроются…', cls: 'closed' }
+    : STATUS[b.value.status] ?? STATUS.off,
+)
 
 const TIMER_LABEL: Record<string, string> = {
   buzz: 'На нажатие',
