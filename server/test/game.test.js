@@ -1,0 +1,453 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { makeGame, addPlayers } from './helpers.js'
+import { Game } from '../game/game.js'
+
+async function startJeopardy(names = ['Аня', 'Боря', 'Вика']) {
+  const ctx = makeGame()
+  const players = addPlayers(ctx.game, names)
+  await ctx.game.hostCommand('pack.load', { packId: 'test-pack' })
+  ctx.game.hostCommand('game.start')
+  return { ...ctx, players }
+}
+
+test('в лобби нажатие — проверка кнопки', () => {
+  const { game, events } = makeGame()
+  const [a] = addPlayers(game, ['Аня'])
+  assert.equal(game.buzz(a.id, game.now()).result, 'test')
+  assert.ok(events.some((e) => e.name === 'test' && e.data.playerId === a.id))
+})
+
+test('имя должно быть уникальным, но можно вернуться под своим именем', () => {
+  const { game } = makeGame()
+  const [a] = addPlayers(game, ['Аня'])
+  assert.throws(() => game.join({ name: 'аня' }), /занято/)
+  game.detach(a.id)
+  assert.throws(() => game.join({ name: 'Аня' }), (err) => err.code === 'nameTaken' && err.canTakeover)
+  const back = game.join({ name: 'Аня', takeover: true })
+  assert.equal(back.id, a.id)
+})
+
+test('«Своя игра» без пакета не начинается', () => {
+  const { game } = makeGame()
+  assert.throws(() => game.hostCommand('game.start'), /пакет/)
+  assert.equal(game.state.stage, 'lobby')
+})
+
+test('обычный вопрос: блокировка за раннее нажатие, честный победитель, штраф и повтор', async () => {
+  const { game, time, players } = await startJeopardy()
+  const [a, b, c] = players
+  const j = game.state.jeopardy
+  assert.equal(j.stage, 'board')
+  game.hostCommand('j.select', { id: '0:0:0' })
+  assert.equal(j.q.step, 'reading')
+
+  // Аня нажала раньше, чем ведущий разрешил ответы → блокировка на 1 секунду
+  const early = game.buzz(a.id, time.now())
+  assert.equal(early.result, 'early')
+  time.advance(200)
+  game.hostCommand('j.arm')
+  assert.equal(game.state.buzzer.status, 'armed')
+  // Аня ещё заблокирована
+  time.advance(100)
+  assert.equal(game.buzz(a.id, time.now()).result, 'early')
+
+  // Боря нажал позже Вики, но его сообщение дошло раньше (у Вики медленный Wi-Fi)
+  game.updatePing(c.id, 200)
+  game.updatePing(c.id, 200)
+  game.updatePing(c.id, 200)
+  const vikaPressedAt = time.now() + 10
+  time.advance(40)
+  assert.equal(game.buzz(b.id, time.now() - 5).result, 'pressed') // Боря нажал в +35
+  assert.equal(game.state.buzzer.status, 'collecting')
+  time.advance(100)
+  assert.equal(game.buzz(c.id, vikaPressedAt).result, 'pressed') // Вика нажала в +10, пришло в +140
+  time.advance(300)
+  assert.equal(game.state.buzzer.status, 'answering')
+  assert.equal(game.state.buzzer.winner.competitorId, c.id)
+  assert.equal(j.q.responderId, c.id)
+  assert.ok(game.state.timers.answer)
+
+  // Неверный ответ: минус цена, Вика заблокирована, кнопки снова открыты
+  game.hostCommand('j.judge', { correct: false })
+  assert.equal(game.score(c.id), -100)
+  assert.equal(j.q.step, 'buzzing')
+  assert.equal(game.state.buzzer.status, 'armed')
+  assert.equal(game.buzz(c.id, time.now()).result, 'locked')
+
+  time.advance(1500)
+  assert.equal(game.buzz(a.id, time.now()).result, 'pressed')
+  time.advance(300)
+  assert.equal(j.q.responderId, a.id)
+  game.hostCommand('j.judge', { correct: true })
+  assert.equal(game.score(a.id), 100)
+  assert.equal(j.chooserId, a.id)
+  assert.equal(j.q.step, 'reveal')
+
+  game.hostCommand('j.close')
+  assert.equal(j.stage, 'board')
+  assert.ok(j.played.includes('0:0:0'))
+  assert.throws(() => game.hostCommand('j.select', { id: '0:0:0' }), /сыгран/)
+})
+
+test('время на нажатие вышло — показывается ответ', async () => {
+  const { game, time } = await startJeopardy()
+  game.hostCommand('j.select', { id: '0:0:0' })
+  game.hostCommand('j.arm')
+  time.advance(10_500)
+  assert.equal(game.state.jeopardy.q.step, 'reveal')
+})
+
+test('если все ответили неверно — вопрос закрывается', async () => {
+  const { game, time, players } = await startJeopardy(['Аня', 'Боря'])
+  game.hostCommand('j.select', { id: '0:0:0' })
+  game.hostCommand('j.arm')
+  for (const p of players) {
+    time.advance(500)
+    game.buzz(p.id, time.now())
+    time.advance(300)
+    game.hostCommand('j.judge', { correct: false })
+  }
+  assert.equal(game.state.jeopardy.q.step, 'reveal')
+  assert.equal(game.score(players[0].id), -100)
+  assert.equal(game.score(players[1].id), -100)
+})
+
+test('кот в мешке, аукцион и вопрос без риска', async () => {
+  const { game, players } = await startJeopardy()
+  const [a, b] = players
+  const j = game.state.jeopardy
+
+  game.hostCommand('j.select', { id: '0:0:1' })
+  assert.equal(j.q.step, 'special')
+  assert.equal(j.q.price, 500)
+  const pub = game.buildViews().pub.jeopardy.question
+  assert.equal(pub.catTheme, 'Коты')
+  assert.equal(pub.content, null, 'содержимое скрыто до назначения отвечающего')
+  game.hostCommand('j.assign', { competitorId: b.id })
+  assert.equal(j.q.responderId, b.id)
+  game.hostCommand('j.judge', { correct: true })
+  assert.equal(game.score(b.id), 500)
+  game.hostCommand('j.close')
+
+  game.hostCommand('j.select', { id: '0:1:0' })
+  game.hostCommand('j.assign', { competitorId: a.id, price: 300 })
+  game.hostCommand('j.judge', { correct: false })
+  assert.equal(game.score(a.id), -300)
+  assert.equal(j.q.step, 'reveal', 'у спецвопроса одна попытка')
+  game.hostCommand('j.close')
+
+  game.hostCommand('j.select', { id: '0:1:1' })
+  game.hostCommand('j.assign', { competitorId: a.id })
+  game.hostCommand('j.judge', { correct: false })
+  assert.equal(game.score(a.id), -300, 'без риска — без штрафа')
+  game.hostCommand('undo')
+  game.hostCommand('j.judge', { correct: true })
+  assert.equal(game.score(a.id), 100, 'без риска — двойная цена')
+})
+
+test('отмена последнего действия возвращает счёт и отвечающего', async () => {
+  const { game, time, players } = await startJeopardy()
+  const [a] = players
+  game.hostCommand('j.select', { id: '0:0:0' })
+  game.hostCommand('j.arm')
+  time.advance(300)
+  game.buzz(a.id, time.now())
+  time.advance(300)
+  game.hostCommand('j.judge', { correct: false })
+  assert.equal(game.score(a.id), -100)
+  game.hostCommand('undo')
+  assert.equal(game.score(a.id), 0)
+  assert.equal(game.state.jeopardy.q.step, 'answering')
+  assert.equal(game.state.jeopardy.q.responderId, a.id)
+  game.hostCommand('j.judge', { correct: true })
+  assert.equal(game.score(a.id), 100)
+})
+
+test('выбор вопроса с телефона — только выбирающим', async () => {
+  const { game, players } = await startJeopardy()
+  const [a, b] = players
+  game.hostCommand('j.chooser', { competitorId: a.id })
+  assert.throws(() => game.playerAction(b.id, 'select', { id: '0:0:0' }), /другой игрок/)
+  game.playerAction(a.id, 'select', { id: '0:0:0' })
+  assert.equal(game.state.jeopardy.stage, 'question')
+})
+
+test('финал: темы, ставки, ответы с телефонов и подсчёт', async () => {
+  const { game, players } = await startJeopardy()
+  const [a, b, c] = players
+  game.state.scores[a.id] = 500
+  game.state.scores[b.id] = 300
+  game.state.scores[c.id] = -100
+  game.hostCommand('j.round', { index: 1 })
+  const j = game.state.jeopardy
+  assert.equal(j.stage, 'final')
+  assert.deepEqual(j.final.participants.sort(), [a.id, b.id].sort(), 'с отрицательным счётом в финал не проходят')
+  assert.equal(j.final.step, 'themes')
+  game.hostCommand('j.final.removeTheme', { index: 0 })
+  assert.equal(j.final.step, 'bets')
+  assert.equal(j.final.themeIndex, 1)
+
+  assert.throws(() => game.playerAction(a.id, 'finalBet', { amount: 600 }), /от 1 до 500/)
+  game.playerAction(a.id, 'finalBet', { amount: 400 })
+  assert.throws(() => game.playerAction(c.id, 'finalBet', { amount: 1 }), /не участвуете/)
+  game.hostCommand('j.final.bet', { competitorId: b.id, amount: 300 })
+
+  const pubBets = game.buildViews().pub.jeopardy.final.participants
+  assert.ok(pubBets.every((p) => p.bet === null), 'ставки скрыты от зрителей')
+
+  game.hostCommand('j.final.question')
+  assert.equal(j.final.step, 'question')
+  game.playerAction(a.id, 'finalAnswer', { text: '  Ф2 ' })
+  game.playerAction(b.id, 'finalAnswer', { text: 'не знаю' })
+  game.hostCommand('j.final.close')
+  game.hostCommand('j.final.show', { competitorId: a.id })
+  game.hostCommand('j.final.judge', { competitorId: a.id, correct: true })
+  game.hostCommand('j.final.judge', { competitorId: b.id, correct: false })
+  assert.equal(game.score(a.id), 900)
+  assert.equal(game.score(b.id), 0)
+  // Передумали — пересуживаем
+  game.hostCommand('j.final.judge', { competitorId: b.id, correct: true })
+  assert.equal(game.score(b.id), 600)
+  game.hostCommand('j.final.answer')
+  assert.equal(game.buildViews().pub.jeopardy.final.answer, 'Ф2')
+  game.hostCommand('j.results')
+  assert.equal(j.stage, 'results')
+})
+
+test('новый раунд начинает игрок с наименьшим счётом', async () => {
+  const pack = (await import('./helpers.js')).TEST_PACK
+  const twoRounds = { ...pack, rounds: [pack.rounds[0], { ...pack.rounds[0], name: 'Раунд 2' }] }
+  const { game } = makeGame({ pack: twoRounds })
+  const [a, b] = addPlayers(game, ['Аня', 'Боря'])
+  await game.hostCommand('pack.load', { packId: 'test-pack' })
+  game.hostCommand('game.start')
+  game.state.scores[a.id] = 500
+  game.state.scores[b.id] = 100
+  game.hostCommand('j.chooser', { competitorId: a.id })
+  game.hostCommand('j.nextRound')
+  assert.equal(game.state.jeopardy.roundIndex, 1)
+  assert.equal(game.state.jeopardy.chooserId, b.id)
+})
+
+test('командный режим: кнопка любого участника — за команду', async () => {
+  const { game, time } = makeGame()
+  game.hostCommand('settings.update', { patch: { teamMode: true } })
+  const red = game.createTeam('Красные')
+  const blue = game.createTeam('Синие')
+  const r1 = game.join({ name: 'Р1', teamId: red.id })
+  const r2 = game.join({ name: 'Р2', teamId: red.id })
+  const b1 = game.join({ name: 'С1', newTeamName: 'синие' })
+  assert.equal(b1.teamId, blue.id, 'существующая команда находится по названию')
+  const loner = game.join({ name: 'Без команды' })
+  for (const p of [r1, r2, b1, loner]) game.attach(p.id)
+  assert.equal(game.buzz(loner.id, time.now()).result, 'noTeam')
+
+  game.hostCommand('mode.set', { mode: 'brainring' })
+  game.hostCommand('game.start')
+  game.hostCommand('br.next')
+  game.hostCommand('br.start')
+  time.advance(500)
+  game.buzz(r2.id, time.now())
+  game.buzz(r1.id, time.now())
+  time.advance(300)
+  assert.equal(game.state.buzzer.winner.competitorId, red.id)
+  assert.equal(game.state.buzzer.winner.playerId, r2.id)
+  game.hostCommand('br.judge', { correct: true })
+  assert.equal(game.score(red.id), 1)
+})
+
+test('«Брейн-ринг»: фальстарт, минута, 20 секунд после ошибки, перенос очков', () => {
+  const { game, time, events } = makeGame()
+  const [a, b, c] = addPlayers(game, ['Альфа', 'Бета', 'Гамма'])
+  game.hostCommand('mode.set', { mode: 'brainring' })
+  game.hostCommand('game.start')
+  const br = game.state.brainring
+  game.hostCommand('br.next')
+  assert.equal(br.stage, 'reading')
+  assert.equal(br.qIndex, 0)
+
+  // Гамма нажала до сигнала — фальстарт
+  assert.equal(game.buzz(c.id, time.now()).result, 'falseStart')
+  assert.ok(events.some((e) => e.name === 'falseStart'))
+  game.hostCommand('br.start')
+  time.advance(50_000)
+  assert.equal(game.buzz(c.id, time.now()).result, 'locked')
+  game.buzz(a.id, time.now())
+  time.advance(200)
+  assert.equal(br.stage, 'answering')
+  const remaining = game.timerRemaining('main')
+  assert.ok(remaining > 9_000 && remaining < 10_500, `осталось ~10 с, а не ${remaining}`)
+  game.hostCommand('br.judge', { correct: false })
+  assert.equal(br.stage, 'armed')
+  assert.equal(game.timerRemaining('main'), 20_000, 'после ошибки даётся не меньше 20 секунд')
+
+  // Никто не ответил — вопрос сгорает, очко переходит дальше
+  time.advance(20_100)
+  assert.equal(br.stage, 'reveal')
+  assert.equal(br.carry, 1)
+  game.hostCommand('br.next')
+  assert.equal(br.value, 2)
+  game.hostCommand('br.start')
+  time.advance(3000)
+  game.buzz(b.id, time.now())
+  time.advance(300)
+  game.hostCommand('br.judge', { correct: true })
+  assert.equal(game.score(b.id), 2)
+  assert.equal(br.carry, 0)
+})
+
+test('«Брейн-ринг»: победа по достижении нужного счёта и новый бой', () => {
+  const { game, time } = makeGame()
+  const [a] = addPlayers(game, ['Альфа', 'Бета'])
+  game.hostCommand('settings.update', { patch: { brTargetScore: 2 } })
+  game.hostCommand('mode.set', { mode: 'brainring' })
+  game.hostCommand('game.start')
+  for (let i = 0; i < 2; i++) {
+    game.hostCommand('br.next')
+    game.hostCommand('br.start')
+    time.advance(1000)
+    game.buzz(a.id, time.now())
+    time.advance(300)
+    game.hostCommand('br.judge', { correct: true })
+  }
+  assert.equal(game.state.brainring.stage, 'finished')
+  assert.equal(game.state.brainring.winnerId, a.id)
+  assert.throws(() => game.hostCommand('br.next'), /новый бой/)
+  game.hostCommand('br.newBattle')
+  assert.equal(game.score(a.id), 0)
+  assert.equal(game.state.brainring.qIndex, 1)
+  game.hostCommand('br.next')
+  assert.equal(game.state.brainring.qIndex, 2)
+})
+
+test('«Брейн-ринг» по пакету: вопросы идут по порядку, ответ скрыт до конца вопроса', async () => {
+  const { game, time } = makeGame()
+  const [a] = addPlayers(game, ['Альфа'])
+  await game.hostCommand('pack.load', { packId: 'test-pack' })
+  game.hostCommand('mode.set', { mode: 'brainring' })
+  game.hostCommand('game.start')
+  game.hostCommand('br.next')
+  let views = game.buildViews()
+  assert.equal(views.host.brainring.question.answer, 'Ответ А100')
+  assert.equal(views.pub.brainring.question.answer, null)
+  assert.equal(views.pub.brainring.question.content, null)
+  game.hostCommand('br.show', { show: true })
+  views = game.buildViews()
+  assert.equal(views.pub.brainring.question.content[0].text, 'Вопрос А100')
+  assert.equal(views.host.brainring.total, 6)
+  game.hostCommand('br.start')
+  time.advance(1000)
+  game.buzz(a.id, time.now())
+  time.advance(300)
+  game.hostCommand('br.judge', { correct: true })
+  assert.equal(game.buildViews().pub.brainring.question.answer, 'Ответ А100')
+})
+
+test('время вышло во время сбора нажатий — нажатие всё равно засчитывается', async () => {
+  const { game, time, players } = await startJeopardy(['Аня', 'Боря'])
+  game.updatePing(players[1].id, 250)
+  game.updatePing(players[1].id, 250)
+  game.hostCommand('j.select', { id: '0:0:0' })
+  game.hostCommand('j.arm')
+  time.advance(9_990)
+  game.buzz(players[0].id, time.now())
+  time.advance(20) // таймер истёк, но окно сбора ещё открыто
+  assert.equal(game.state.jeopardy.q.step, 'answering')
+  assert.equal(game.state.jeopardy.q.responderId, players[0].id)
+})
+
+test('сохранение и восстановление после перезапуска', async () => {
+  const { game, time, players } = await startJeopardy(['Аня', 'Боря'])
+  game.hostCommand('j.select', { id: '0:0:0' })
+  game.hostCommand('j.arm')
+  time.advance(500)
+  game.buzz(players[0].id, time.now())
+  time.advance(300)
+  game.hostCommand('j.judge', { correct: true })
+  const saved = JSON.parse(JSON.stringify(game.serialize()))
+
+  const { game: fresh } = makeGame()
+  assert.equal(await fresh.restore(saved), true)
+  assert.equal(fresh.state.stage, 'game')
+  assert.equal(fresh.score(players[0].id), 100)
+  assert.equal(fresh.playerByToken(players[0].token).id, players[0].id)
+  assert.equal(fresh.pack.id, 'test-pack')
+  assert.equal(fresh.state.jeopardy.q.step, 'reveal')
+  assert.equal(fresh.isConnected(players[0].id), false)
+})
+
+test('повреждённое сохранение не ломает сервер', async () => {
+  const { game } = makeGame()
+  assert.equal(await game.restore({ v: 1, players: 'мусор', jeopardy: 5 }), true)
+  assert.deepEqual(game.state.players, [])
+  assert.equal(await game.restore(null), false)
+  assert.equal(await game.restore({ v: 99 }), false)
+})
+
+test('представление игрока содержит его место в очереди нажатий', async () => {
+  const { game, time, players } = await startJeopardy(['Аня', 'Боря'])
+  const [a, b] = players
+  game.hostCommand('j.select', { id: '0:0:0' })
+  game.hostCommand('j.arm')
+  time.advance(400)
+  game.buzz(a.id, time.now())
+  time.advance(10)
+  game.buzz(b.id, time.now())
+  time.advance(300)
+  const views = game.buildViews()
+  const meA = views.me(a.id)
+  const meB = views.me(b.id)
+  assert.equal(meA.rank, 1)
+  assert.equal(meA.isWinner, true)
+  assert.equal(meB.rank, 2)
+  assert.equal(meB.delta, 10)
+  assert.equal(views.pub.jeopardy.question.answer, null)
+  assert.equal(views.host.jeopardy.question.answer, 'Ответ А100')
+})
+
+test('удалённый игрок пропадает, его счёт тоже', () => {
+  const { game } = makeGame()
+  const kicked = []
+  game.on('kick', (id) => kicked.push(id))
+  const [a] = addPlayers(game, ['Аня'])
+  game.state.scores[a.id] = 10
+  game.hostCommand('player.remove', { playerId: a.id })
+  assert.deepEqual(kicked, [a.id])
+  assert.equal(game.player(a.id), null)
+  assert.equal(game.state.scores[a.id], undefined)
+})
+
+test('Game можно создать без параметров', () => {
+  const g = new Game()
+  assert.equal(g.state.stage, 'lobby')
+  assert.equal(g.buildViews().pub.mode, 'jeopardy')
+})
+
+test('после перезапуска открытый вопрос возвращается к чтению, а кот в мешке — остаётся у отвечающего', async () => {
+  const { game, time, players } = await startJeopardy(['Аня', 'Боря'])
+  game.hostCommand('j.select', { id: '0:0:0' })
+  game.hostCommand('j.arm')
+  time.advance(300)
+  game.buzz(players[0].id, time.now())
+  time.advance(300)
+  assert.equal(game.state.buzzer.status, 'answering')
+  const { game: g1 } = makeGame()
+  await g1.restore(JSON.parse(JSON.stringify(game.serialize())))
+  assert.equal(g1.state.jeopardy.q.step, 'reading')
+  assert.equal(g1.state.buzzer.status, 'closed')
+  assert.equal(g1.state.buzzer.winner, null)
+  g1.hostCommand('j.arm')
+  assert.equal(g1.state.buzzer.status, 'armed')
+
+  game.hostCommand('j.reveal')
+  game.hostCommand('j.close')
+  game.hostCommand('j.select', { id: '0:0:1' })
+  game.hostCommand('j.assign', { competitorId: players[1].id })
+  const { game: g2 } = makeGame()
+  await g2.restore(JSON.parse(JSON.stringify(game.serialize())))
+  assert.equal(g2.state.jeopardy.q.step, 'answering')
+  assert.equal(g2.state.jeopardy.q.responderId, players[1].id)
+  g2.hostCommand('j.judge', { correct: true })
+  assert.equal(g2.score(players[1].id), 500)
+})
