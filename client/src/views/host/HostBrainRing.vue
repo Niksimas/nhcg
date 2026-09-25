@@ -308,14 +308,17 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   justify-content: space-between;
   gap: 10px;
   padding: 10px 16px;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--c);
   color: var(--t);
   font-weight: 800;
   font-size: 1.2rem;
+  box-shadow: 0 10px 22px -12px var(--c);
 }
 .bt.lead {
-  box-shadow: 0 0 0 3px var(--accent);
+  box-shadow:
+    0 0 0 3px var(--panel),
+    0 0 0 6px var(--gold);
 }
 .bt-score {
   font-size: 2rem;
@@ -342,7 +345,7 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   padding: 8px 14px;
   border-radius: 10px;
   border: 2px solid var(--c);
-  background: transparent;
+  background: var(--panel);
   color: var(--text);
   font-weight: 700;
   cursor: pointer;
@@ -378,8 +381,8 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   color: var(--text);
 }
 .chip.warn {
-  background: rgba(245, 158, 11, 0.2);
-  color: #ffd08a;
+  background: var(--warn-soft);
+  color: #92400e;
 }
 .q-grid {
   display: grid;
@@ -392,13 +395,13 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   gap: 10px;
 }
 .a-card {
-  border-color: rgba(255, 200, 61, 0.4);
-  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  border-color: #f6d58f;
+  background: linear-gradient(180deg, var(--gold-soft), var(--panel) 70%);
 }
 .answer {
   font-size: 1.5rem;
-  font-weight: 900;
-  color: var(--accent);
+  font-weight: 800;
+  color: #b45309;
 }
 .a-card.hidden .answer,
 .a-card.hidden .comment {
@@ -439,7 +442,7 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   gap: 10px;
   font-size: 1.2rem;
   font-weight: 800;
-  color: #7ef0a8;
+  color: var(--ok);
 }
 .pulse-dot {
   width: 14px;
@@ -454,7 +457,8 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   background: var(--c);
   color: var(--t);
   font-size: 1.7rem;
-  font-weight: 900;
+  font-weight: 800;
+  box-shadow: 0 10px 24px -10px var(--c);
   animation: pop 0.3s ease;
 }
 .react {
@@ -479,7 +483,7 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   color: var(--muted);
 }
 .fs {
-  color: #ff9a9a;
+  color: var(--bad);
   font-weight: 700;
 }
 .history {
@@ -506,8 +510,8 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   gap: 10px;
   text-align: left;
   padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid transparent;
+  border-radius: 10px;
+  border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--text);
   cursor: pointer;
@@ -517,6 +521,7 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
 }
 .qitem.cur {
   border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .qitem.done {
   opacity: 0.55;

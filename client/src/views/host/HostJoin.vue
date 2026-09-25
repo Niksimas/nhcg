@@ -127,6 +127,11 @@ function setOnline(ev: Event) {
 }
 .qr {
   width: min(340px, 80vw);
+  padding: 10px;
+  border-radius: 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
 }
 .url {
   font-size: 1.6rem;
@@ -164,7 +169,7 @@ function setOnline(ev: Event) {
   gap: 6px;
 }
 .warn {
-  color: #ffd08a;
+  color: #b45309;
 }
 .help summary {
   cursor: pointer;
@@ -191,6 +196,10 @@ function setOnline(ev: Event) {
 .qr-small {
   width: 120px;
   flex: none;
+  padding: 6px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid var(--line);
 }
 .small {
   font-size: 0.85rem;
@@ -199,8 +208,9 @@ function setOnline(ev: Event) {
   display: block;
   font-size: 0.85rem;
   word-break: break-all;
-  background: var(--bg-2);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
   padding: 6px 8px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 </style>

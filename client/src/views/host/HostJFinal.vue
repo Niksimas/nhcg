@@ -121,7 +121,7 @@ async function closeAnswers() {
         <div v-for="p in f.participants" :key="p.competitorId" class="part" :style="{ '--c': colorOf(p.competitorId) }">
           <span class="grow name">{{ nameOf(p.competitorId) }}</span>
           <span class="nums muted">ставка {{ p.bet ?? 0 }}</span>
-          <span :class="p.hasAnswer ? 'ok' : 'muted'">{{ p.hasAnswer ? `«${p.answer}»` : 'пишет…' }}</span>
+          <span :class="p.hasAnswer ? 'got' : 'muted'">{{ p.hasAnswer ? `«${p.answer}»` : 'пишет…' }}</span>
         </div>
       </div>
       <button class="btn primary big" @click="closeAnswers">Закончить приём ответов</button>
@@ -188,8 +188,9 @@ async function closeAnswers() {
   align-items: center;
   gap: 8px;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--panel-2);
+  border: 1px solid var(--line);
   font-weight: 700;
 }
 .theme-row.removed {
@@ -207,8 +208,9 @@ async function closeAnswers() {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--panel-2);
+  border: 1px solid var(--line);
   border-left: 6px solid var(--c);
   flex-wrap: wrap;
 }
@@ -219,10 +221,10 @@ async function closeAnswers() {
   outline: 2px solid var(--accent);
 }
 .part.ok {
-  background: rgba(34, 197, 94, 0.18);
+  background: var(--ok-soft);
 }
 .part.bad {
-  background: rgba(239, 68, 68, 0.18);
+  background: var(--bad-soft);
 }
 .ans {
   font-weight: 700;
@@ -240,8 +242,9 @@ async function closeAnswers() {
 .small {
   font-size: 0.85rem;
 }
-.ok {
-  color: #7ef0a8;
+.got {
+  color: var(--ok-2);
+  font-weight: 700;
 }
 .q-grid {
   display: grid;
@@ -249,12 +252,13 @@ async function closeAnswers() {
   gap: 12px;
 }
 .a-card {
-  border-color: rgba(255, 200, 61, 0.4);
+  border-color: #f6d58f;
+  background: linear-gradient(180deg, var(--gold-soft), var(--panel) 70%);
 }
 .answer {
   font-size: 1.4rem;
-  font-weight: 900;
-  color: var(--accent);
+  font-weight: 800;
+  color: #b45309;
 }
 .comment {
   color: var(--muted);

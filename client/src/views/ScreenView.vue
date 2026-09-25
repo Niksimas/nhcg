@@ -123,7 +123,7 @@ useConnMessage(conn, 'event', (msg) => {
     if (c) showOverlay({ text: 'Фальстарт!', sub: c.name, color: '#dc2626', kind: 'false' }, 1600)
   }
   if (name === 'soundTest' && !sound.unlocked.value) {
-    showOverlay({ text: 'Щёлкните здесь', sub: 'чтобы браузер разрешил звук', color: '#1c3aa9', kind: 'hint' }, 3000)
+    showOverlay({ text: 'Щёлкните здесь', sub: 'чтобы браузер разрешил звук', color: '#4f46e5', kind: 'hint' }, 3000)
   }
   if (name === 'media') {
     if (data.action === 'replay') {
@@ -237,8 +237,9 @@ const mode = computed(() => state.value?.mode)
   inset: 0;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 50% -20%, #1c2b70 0%, transparent 60%),
-    radial-gradient(ellipse at 50% 120%, #1a1250 0%, transparent 55%),
+    radial-gradient(60vw 45vh at 8% -8%, rgba(99, 102, 241, 0.16), transparent 70%),
+    radial-gradient(55vw 45vh at 105% 108%, rgba(236, 72, 153, 0.11), transparent 70%),
+    radial-gradient(45vw 40vh at -5% 105%, rgba(6, 182, 212, 0.1), transparent 70%),
     var(--bg);
   user-select: none;
 }
@@ -264,8 +265,10 @@ const mode = computed(() => state.value?.mode)
   top: 16px;
   width: 150px;
   padding: 8px;
-  background: rgba(10, 15, 36, 0.85);
-  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  border-radius: 16px;
   text-align: center;
 }
 .corner-url {
@@ -281,7 +284,7 @@ const mode = computed(() => state.value?.mode)
   align-items: center;
   justify-content: center;
   gap: 2vh;
-  background: color-mix(in srgb, var(--c) 88%, black);
+  background: radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--c) 82%, white), var(--c) 75%);
   color: var(--t);
   z-index: 20;
   pointer-events: none;
@@ -291,7 +294,8 @@ const mode = computed(() => state.value?.mode)
 }
 .overlay-text {
   font-size: clamp(3rem, 12vw, 12rem);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   text-align: center;
   animation: pop 0.35s ease;
   line-height: 1.05;
@@ -321,7 +325,8 @@ const mode = computed(() => state.value?.mode)
   position: absolute;
   inset: 0;
   z-index: 40;
-  background: rgba(5, 8, 20, 0.7);
+  background: rgba(243, 245, 250, 0.72);
+  backdrop-filter: blur(6px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -329,8 +334,9 @@ const mode = computed(() => state.value?.mode)
 }
 .start-card {
   background: var(--panel);
-  border: 1px solid var(--line-2);
-  border-radius: 20px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  border-radius: 24px;
   padding: 28px 36px;
   text-align: center;
   display: flex;
@@ -352,7 +358,7 @@ const mode = computed(() => state.value?.mode)
   position: absolute;
   right: 10px;
   bottom: 10px;
-  opacity: 0.25;
+  opacity: 0.35;
   z-index: 25;
 }
 .fs-btn:hover {

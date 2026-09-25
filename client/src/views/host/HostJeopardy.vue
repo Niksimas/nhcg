@@ -116,29 +116,42 @@ async function select(id: string, played: boolean) {
   gap: 6px;
 }
 .round-tab {
-  padding: 0.45em 0.9em;
+  padding: 0.45em 0.95em;
   border-radius: 99px;
-  border: 1px solid var(--line-2);
-  background: var(--panel-2);
+  border: 1px solid var(--line);
+  background: var(--panel);
   color: var(--text);
   font-weight: 700;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.round-tab:hover:not(.on) {
+  border-color: var(--line-2);
+  background: var(--panel-2);
 }
 .round-tab.on {
-  background: var(--accent);
+  background: linear-gradient(135deg, #6366f1, var(--accent));
   color: var(--accent-text);
   border-color: transparent;
+  box-shadow: 0 6px 14px -6px rgba(79, 70, 229, 0.7);
 }
 .kind-tag {
   font-size: 0.72em;
   font-weight: 600;
   opacity: 0.75;
 }
+.round-tab.done:not(.on) {
+  color: var(--muted);
+}
 .round-tab.final:not(.on) {
-  border-color: rgba(255, 200, 61, 0.5);
+  border-color: color-mix(in srgb, var(--gold) 60%, transparent);
+  background: var(--gold-soft);
 }
 .board-head {
   display: flex;
@@ -182,8 +195,9 @@ async function select(id: string, played: boolean) {
   align-items: center;
   gap: 12px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--panel-2);
+  border: 1px solid var(--line);
   border-left: 6px solid var(--c);
   font-size: 1.15rem;
 }

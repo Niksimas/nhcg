@@ -41,7 +41,7 @@ const warn = computed(() => !!props.timer && left.value <= props.warnAt && left.
   flex: 1;
   height: 10px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--panel-3);
   overflow: hidden;
 }
 .big .bar {
@@ -51,11 +51,11 @@ const warn = computed(() => !!props.timer && left.value <= props.warnAt && left.
   height: 100%;
   width: 100%;
   transform-origin: left center;
-  background: linear-gradient(90deg, var(--ok), #7ee787);
+  background: linear-gradient(90deg, #22c55e, #4ade80);
   transition: transform 0.12s linear;
 }
 .warn .fill {
-  background: linear-gradient(90deg, var(--bad), var(--warn));
+  background: linear-gradient(90deg, var(--bad), #fb923c);
 }
 .paused .fill {
   background: var(--muted);

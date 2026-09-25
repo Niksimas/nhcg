@@ -98,7 +98,8 @@ class Session {
   }
 
   shot(page, name) {
-    return page.screenshot({ path: path.join(OUT, this.name, `${name}.png`) })
+    // Анимации отключаются, чтобы на снимке было итоговое состояние, а не середина перехода.
+    return page.screenshot({ path: path.join(OUT, this.name, `${name}.png`), animations: 'disabled' })
   }
 
   async failShots() {
@@ -153,13 +154,16 @@ async function jeopardyScenario(browser, step) {
     await host.locator('button[title="Настройки"]').click()
     await host.locator('label.field', { hasText: 'Правила' }).locator('select').selectOption('tv')
     await sleep(300)
+    await s.shot(host, 'host-settings')
     await host.keyboard.press('Escape')
     await host.getByRole('button', { name: 'Выбрать пакет' }).click()
+    await host.locator('.pack', { hasText: 'Демо: Своя игра' }).waitFor()
+    await s.shot(host, 'host-packs')
     await host.locator('.pack', { hasText: 'Демо: Своя игра' }).getByRole('button', { name: 'Играть' }).click()
     await host.getByRole('button', { name: 'Начать игру' }).click()
     await host.locator('.board').waitFor()
     const chooser = await host.locator('.board-head .chooser').textContent()
-    if (!chooser.includes('Аня')) await host.locator('.comp', { hasText: 'Аня' }).getByText('сделать выбирающим').click()
+    if (!chooser.includes('Аня')) await host.locator('.comp', { hasText: 'Аня' }).getByTitle(/Сделать выбирающим/).click()
     await anna.getByText('Выберите вопрос:').waitFor()
     await s.shot(screen, 'screen-board')
 
@@ -170,10 +174,13 @@ async function jeopardyScenario(browser, step) {
     await boris.getByText('Рано!').waitFor()
     await host.keyboard.press('Space')
     await vika.locator('.buzzer.go').waitFor()
+    await s.shot(vika, 'phone-go')
     await tap(vika)
     await host.locator('.responder', { hasText: 'Вика' }).waitFor()
     await vika.getByText('Ваш ответ!').waitFor()
+    await s.shot(vika, 'phone-winner')
     await s.shot(host, 'host-answering')
+    await s.shot(screen, 'screen-question')
     await host.keyboard.press('Backspace')
     await anna.locator('.buzzer.go').waitFor()
     await tap(anna)
@@ -741,11 +748,11 @@ async function roomsScenario(browser, step) {
 
     step('Устройства игроков становятся экраном и пультом ведущего')
     host.once('dialog', (d) => d.accept())
-    await host.locator('.comp', { hasText: 'Борис' }).getByText('сделать экраном').click()
+    await host.locator('.comp', { hasText: 'Борис' }).getByTitle(/Сделать экраном/).click()
     await boris.waitForURL(new RegExp(`/r/${code}/screen$`))
     await boris.getByText('Экран игры').waitFor()
     host.once('dialog', (d) => d.accept())
-    await host.locator('.comp', { hasText: 'Вика' }).getByText('сделать ведущим').click()
+    await host.locator('.comp', { hasText: 'Вика' }).getByTitle(/Сделать ведущим/).click()
     await vika.waitForURL(new RegExp(`/r/${code}/host$`))
     await vika.locator('.room-chip').waitFor()
     await s.shot(vika, 'phone-as-host')

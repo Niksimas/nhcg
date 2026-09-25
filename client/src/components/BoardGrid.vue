@@ -66,9 +66,10 @@ function click(id: string, played: boolean) {
 .cell {
   display: flex;
   align-items: center;
-  border-radius: 8px;
+  border-radius: 12px;
   background: linear-gradient(180deg, var(--board), var(--board-2));
   border: 1px solid var(--board-edge);
+  box-shadow: var(--shadow-sm);
   min-width: 0;
 }
 .theme.current {
@@ -92,17 +93,20 @@ function click(id: string, played: boolean) {
   font-size: 0.7em;
   padding: 0.1em 0.4em;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--panel-3);
   text-transform: none;
   font-weight: 600;
 }
 .theme {
   padding: 0.4em 0.8em;
-  font-weight: 700;
+  font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.02em;
   overflow-wrap: anywhere;
   line-height: 1.15;
+  background: linear-gradient(180deg, #f4f5ff, var(--accent-soft));
+  border-color: #dcdffb;
+  color: #312e81;
 }
 .cell {
   position: relative;
@@ -120,9 +124,10 @@ function click(id: string, played: boolean) {
   filter: brightness(1.3);
 }
 .cell.played {
-  background: rgba(20, 43, 133, 0.25);
-  border-color: rgba(53, 88, 216, 0.3);
-  color: rgba(255, 200, 61, 0.28);
+  background: var(--panel-3);
+  border-color: transparent;
+  box-shadow: none;
+  color: var(--faint);
 }
 .cell.selected {
   background: var(--accent);
@@ -148,9 +153,18 @@ function click(id: string, played: boolean) {
 .screen .theme {
   font-size: clamp(0.8rem, 1.5vw, 1.6rem);
 }
+.screen .theme,
+.screen .cell {
+  border-radius: clamp(10px, 1.2vw, 18px);
+}
 .screen .cell {
   font-size: clamp(1.2rem, 3.2vw, 3.4rem);
-  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.35);
+  letter-spacing: -0.02em;
+  box-shadow: var(--shadow);
+}
+.screen .cell.played {
+  box-shadow: none;
+  background: rgba(234, 237, 245, 0.7);
 }
 
 .host .theme {
@@ -162,7 +176,7 @@ function click(id: string, played: boolean) {
   min-height: 2.6em;
 }
 .host .cell.played {
-  color: rgba(255, 200, 61, 0.35);
+  color: var(--faint);
   text-decoration: line-through;
 }
 

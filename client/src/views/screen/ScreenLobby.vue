@@ -100,10 +100,13 @@ const count = computed(() => props.state.players.length)
 .title {
   font-size: clamp(2.5rem, 7vw, 6.5rem);
   margin: 0;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  text-shadow: 0 6px 30px rgba(255, 200, 61, 0.35);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  background: linear-gradient(100deg, #4f46e5, #7c3aed 55%, #db2777);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .join {
   display: flex;
@@ -111,8 +114,9 @@ const count = computed(() => props.state.players.length)
   gap: 4vw;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 24px;
+  border-radius: 28px;
   padding: 3vh 3vw;
+  box-shadow: var(--shadow-lg);
 }
 .qr {
   width: clamp(180px, 26vh, 340px);
@@ -129,9 +133,9 @@ const count = computed(() => props.state.players.length)
 .url {
   margin: 0;
   font-size: clamp(1.6rem, 3.4vw, 3.4rem);
-  font-weight: 900;
+  font-weight: 800;
   color: var(--accent);
-  letter-spacing: 0.02em;
+  letter-spacing: -0.01em;
 }
 .url.code {
   font-size: clamp(2.4rem, 6vw, 5.5rem);
@@ -166,20 +170,22 @@ const count = computed(() => props.state.players.length)
   color: var(--t);
   font-weight: 800;
   font-size: clamp(1rem, 1.9vw, 1.8rem);
+  box-shadow: 0 8px 20px -10px var(--c);
   animation: pop 0.35s ease;
 }
 .team {
   min-width: 220px;
-  border-radius: 16px;
+  border-radius: 18px;
   background: var(--panel);
+  border: 1px solid var(--line);
   border-top: 6px solid var(--c);
+  box-shadow: var(--shadow);
   padding: 12px 16px;
 }
 .team-name {
-  font-weight: 900;
+  font-weight: 800;
   font-size: clamp(1.1rem, 2vw, 2rem);
-  color: var(--c);
-  filter: brightness(1.3);
+  color: color-mix(in srgb, var(--c) 80%, black);
 }
 .members {
   display: flex;
@@ -190,7 +196,8 @@ const count = computed(() => props.state.players.length)
 .member {
   padding: 0.2em 0.7em;
   border-radius: 99px;
-  background: var(--panel-3);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
   font-weight: 700;
 }
 .off {

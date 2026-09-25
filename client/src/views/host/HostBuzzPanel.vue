@@ -91,9 +91,11 @@ const timers = computed(() =>
   align-items: center;
   gap: 8px;
   font-weight: 800;
-  padding: 8px 12px;
-  border-radius: 10px;
-  background: var(--panel-2);
+  padding: 9px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
 }
 .status .dot {
   width: 12px;
@@ -101,19 +103,21 @@ const timers = computed(() =>
   background: var(--muted);
 }
 .status.armed {
-  background: rgba(34, 197, 94, 0.18);
-  color: #7ef0a8;
+  background: var(--ok-soft);
+  border-color: #b5e5c6;
+  color: var(--ok-2);
 }
 .status.armed .dot {
   background: var(--ok);
   animation: pulse 0.8s infinite;
 }
 .status.answering {
-  background: rgba(255, 200, 61, 0.15);
-  color: var(--accent);
+  background: var(--gold-soft);
+  border-color: #f6d58f;
+  color: #92400e;
 }
 .status.answering .dot {
-  background: var(--accent);
+  background: var(--gold);
 }
 .status.closed .dot {
   background: var(--warn);
@@ -148,12 +152,13 @@ const timers = computed(() =>
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 8px;
-  background: var(--panel-2);
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-left: 5px solid var(--c);
 }
 .rank.first {
-  background: color-mix(in srgb, var(--c) 30%, var(--panel-2));
+  background: color-mix(in srgb, var(--c) 14%, var(--panel));
   font-weight: 800;
 }
 .rank.late {

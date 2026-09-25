@@ -162,14 +162,16 @@ async function onFile(ev: Event) {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
-  border-radius: 12px;
-  background: var(--panel-2);
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--panel);
   border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
   flex-wrap: wrap;
 }
 .pack.current {
   border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .info {
   flex: 1 1 280px;

@@ -200,9 +200,10 @@ function openScreen() {
 .num {
   width: 28px;
   height: 28px;
-  border-radius: 50%;
-  background: var(--accent);
+  border-radius: 9px;
+  background: linear-gradient(135deg, #6366f1, var(--accent-2));
   color: var(--accent-text);
+  box-shadow: 0 4px 10px -4px rgba(79, 70, 229, 0.7);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -216,9 +217,11 @@ function openScreen() {
 .qr-btn {
   width: 170px;
   flex: none;
-  border: none;
-  padding: 0;
-  background: none;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 8px;
+  background: #fff;
+  box-shadow: var(--shadow);
   cursor: zoom-in;
 }
 .join-text p {
@@ -226,7 +229,8 @@ function openScreen() {
 }
 .url {
   font-size: 1.9rem;
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   color: var(--accent);
   margin-bottom: 8px;
   word-break: break-all;
@@ -246,19 +250,32 @@ function openScreen() {
 .mode {
   text-align: left;
   padding: 16px;
-  border-radius: 14px;
-  border: 2px solid var(--line-2);
+  border-radius: 16px;
+  border: 1.5px solid var(--line);
   background: var(--panel-2);
   cursor: pointer;
   color: var(--text);
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
+}
+.mode:hover:not(.on) {
+  border-color: var(--line-2);
+  background: var(--panel);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow);
 }
 .mode.on {
   border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel-2));
+  background: var(--accent-soft);
+  box-shadow: var(--ring);
 }
 .mode-title {
-  font-size: 1.3rem;
-  font-weight: 900;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   margin-bottom: 4px;
 }
 .mode.on .mode-title {
@@ -286,6 +303,7 @@ function openScreen() {
 .pack-title {
   font-size: 1.15rem;
   font-weight: 800;
+  letter-spacing: -0.01em;
 }
 .small {
   font-size: 0.85rem;

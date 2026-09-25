@@ -323,13 +323,18 @@ section {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
 }
 h4 {
   margin: 0;
   color: var(--accent);
-  font-size: 1rem;
+  font-size: 0.9rem;
+  font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.07em;
 }
 .note {
   margin: 0;

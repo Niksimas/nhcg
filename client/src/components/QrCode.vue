@@ -3,7 +3,7 @@ import { ref, watchEffect } from 'vue'
 import QRCode from 'qrcode'
 
 const props = withDefaults(defineProps<{ text: string; dark?: string; light?: string }>(), {
-  dark: '#0a0f24',
+  dark: '#151a2d',
   light: '#ffffff',
 })
 

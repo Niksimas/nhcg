@@ -80,9 +80,10 @@ function pick(i: number) {
 }
 .theme {
   padding: 12px 14px;
-  border-radius: 12px;
-  border: 2px solid var(--line-2);
-  background: var(--panel-2);
+  border-radius: 14px;
+  border: 1.5px solid var(--line);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
   color: var(--text);
   font: inherit;
   font-weight: 800;
@@ -97,7 +98,8 @@ function pick(i: number) {
 }
 .theme.picked {
   border-color: var(--bad);
-  background: color-mix(in srgb, var(--bad) 25%, var(--panel-2));
+  background: var(--bad-soft);
+  color: var(--bad-2);
 }
 .theme.struck {
   opacity: 0.35;

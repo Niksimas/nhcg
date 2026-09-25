@@ -13,7 +13,10 @@ const s = computed(() => state.value!)
 const teamMode = computed(() => s.value.settings.teamMode)
 const pings = conn.pings
 
-const chooserId = computed(() => (s.value.stage === 'game' && s.value.mode === 'jeopardy' ? s.value.jeopardy?.chooserId ?? null : null))
+// Выбирающий вопрос есть только в «Своей игре» по правилам телепередачи.
+const chooserId = computed(() =>
+  s.value.stage === 'game' && s.value.mode === 'jeopardy' && s.value.jeopardy?.format === 'tv' ? s.value.jeopardy.chooserId ?? null : null,
+)
 const activeId = computed(() => {
   const b = s.value.buzzer
   if (b.status === 'answering' && b.winner) return b.winner.competitorId
@@ -193,6 +196,7 @@ const title = computed(() => {
             </template>
             <template v-else>
               <span class="muted">{{ c.members.length }} {{ plural(c.members.length, 'игрок', 'игрока', 'игроков') }}</span>
+              <button class="act danger" title="Удалить команду" @click="removeTeam(c)"><Icon name="trash" size="0.95em" /></button>
             </template>
             <span v-if="falseStarts.has(c.id)" class="bad-tag">фальстарт</span>
             <span v-else-if="lockedOut.has(c.id)" class="bad-tag">отвечал</span>
@@ -231,16 +235,32 @@ const title = computed(() => {
         <button v-for="col in PALETTE_UI" :key="col" class="swatch-pick" :style="{ background: col }" @click="pickColor(c, col)" />
       </div>
 
-      <div class="actions">
-        <button v-if="chooserId !== null && s.mode === 'jeopardy' && c.id !== chooserId" class="link" @click="setChooser(c)">
-          сделать выбирающим
+      <div v-if="c.kind === 'player' || (chooserId !== null && c.id !== chooserId)" class="actions">
+        <button
+          v-if="chooserId !== null && s.mode === 'jeopardy' && c.id !== chooserId"
+          class="act"
+          title="Сделать выбирающим — он выбирает следующий вопрос"
+          @click="setChooser(c)"
+        >
+          <Icon name="next" size="0.95em" /> выбирает
         </button>
         <template v-if="c.kind === 'player' && c.connected">
-          <button class="link" title="Показывать на этом устройстве табло для зрителей" @click="promote(c.id, 'screen')">сделать экраном</button>
-          <button class="link" title="Управлять игрой с этого устройства" @click="promote(c.id, 'host')">сделать ведущим</button>
+          <button class="act" title="Сделать экраном — показывать на этом устройстве табло для зрителей" @click="promote(c.id, 'screen')">
+            <Icon name="monitor" size="0.95em" /> экран
+          </button>
+          <button class="act" title="Сделать ведущим — управлять игрой с этого устройства" @click="promote(c.id, 'host')">
+            <Icon name="settings" size="0.95em" /> пульт
+          </button>
         </template>
-        <button v-if="c.kind === 'player'" class="link danger" @click="removePlayer(s.players.find((p) => p.id === c.id)!)">удалить</button>
-        <button v-else class="link danger" @click="removeTeam(c)">удалить</button>
+        <span class="grow" />
+        <button
+          v-if="c.kind === 'player'"
+          class="act danger"
+          title="Удалить игрока"
+          @click="removePlayer(s.players.find((p) => p.id === c.id)!)"
+        >
+          <Icon name="trash" size="0.95em" />
+        </button>
       </div>
 
       <div v-if="c.kind === 'team'" class="members">
@@ -313,21 +333,34 @@ const title = computed(() => {
   margin: 4px 0;
 }
 .comp {
-  border-radius: 12px;
-  background: var(--panel-2);
-  border: 2px solid transparent;
-  border-left: 6px solid var(--c);
-  padding: 8px 8px 6px 10px;
+  position: relative;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
+  padding: 9px 9px 7px 14px;
+  overflow: hidden;
   transition:
     background 0.2s,
-    border-color 0.2s;
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+.comp::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--c);
 }
 .comp.active {
   border-color: var(--c);
-  background: color-mix(in srgb, var(--c) 30%, var(--panel-2));
+  background: color-mix(in srgb, var(--c) 12%, var(--panel));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c) 45%, transparent);
 }
 .comp.chooser {
-  box-shadow: inset 0 0 0 1px rgba(255, 200, 61, 0.5);
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--gold) 70%, transparent);
 }
 .comp.locked {
   opacity: 0.6;
@@ -344,7 +377,8 @@ const title = computed(() => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.4);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--line-2);
   background: var(--c);
   cursor: pointer;
   flex: none;
@@ -358,7 +392,7 @@ const title = computed(() => {
   cursor: text;
 }
 .tag-ch {
-  color: var(--accent);
+  color: var(--gold);
   font-size: 0.8em;
 }
 .meta {
@@ -379,7 +413,7 @@ const title = computed(() => {
   color: var(--bad);
 }
 .bad-tag {
-  color: #ff9a9a;
+  color: var(--bad);
   font-weight: 700;
 }
 .score-wrap {
@@ -418,15 +452,43 @@ const title = computed(() => {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px var(--line-2);
   cursor: pointer;
   padding: 0;
+  transition: transform 0.1s;
+}
+.swatch-pick:hover {
+  transform: scale(1.15);
 }
 .actions {
   display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  margin-top: 2px;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+.act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 7px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.act:hover {
+  background: var(--panel-3);
+  color: var(--text);
+}
+.act.danger:hover {
+  background: var(--bad-soft);
+  color: var(--bad);
 }
 .link {
   background: none;
@@ -455,9 +517,9 @@ const title = computed(() => {
   align-items: center;
   gap: 6px;
   font-size: 0.88rem;
-  padding: 3px 4px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.15);
+  padding: 3px 4px 3px 6px;
+  border-radius: 8px;
+  background: var(--panel-2);
 }
 .member.flash {
   animation: flash 0.7s ease;
@@ -492,10 +554,12 @@ const title = computed(() => {
   width: 2.6em;
   padding-left: 4px;
   padding-right: 4px;
+  background-image: none;
+  text-align: center;
   flex: none;
 }
 .cap {
-  color: var(--accent);
+  color: var(--gold);
   font-size: 0.85rem;
   flex: none;
 }

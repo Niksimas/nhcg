@@ -15,8 +15,8 @@ import { buildViews } from './views.js'
 export { GameError, newId, cleanName }
 
 export const PALETTE = [
-  '#e53935', '#1e88e5', '#43a047', '#fdd835', '#8e24aa', '#fb8c00',
-  '#00acc1', '#d81b60', '#7cb342', '#5c6bc0', '#8d6e63', '#26a69a',
+  '#ef4444', '#3b82f6', '#16a34a', '#f59e0b', '#8b5cf6', '#06b6d4',
+  '#ec4899', '#f97316', '#14b8a6', '#84cc16', '#a16207', '#475569',
 ]
 
 const MODE_TITLE = { jeopardy: '«Своя игра»', brainring: '«Брейн-ринг»', khamsa: '«Хамса»' }

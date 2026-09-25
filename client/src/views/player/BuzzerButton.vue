@@ -26,10 +26,12 @@ function onDown(ev: PointerEvent) {
 </template>
 
 <style scoped>
+/* Каждое состояние задаёт цвета: --bg1/--bg2 — градиент, --edge — «бортик» кнопки, --fg — текст. */
 .buzzer {
-  --bg1: #3a466f;
-  --bg2: #232c4d;
-  --fg: #cfd6f5;
+  --bg1: #eef1f8;
+  --bg2: #d9dfec;
+  --edge: #c3cbdc;
+  --fg: #5f6882;
   position: relative;
   width: min(78vw, 52vh, 420px);
   aspect-ratio: 1;
@@ -41,13 +43,13 @@ function onDown(ev: PointerEvent) {
   justify-content: center;
   gap: 0.4em;
   padding: 12%;
-  background: radial-gradient(circle at 50% 35%, var(--bg1), var(--bg2));
+  background: radial-gradient(circle at 50% 30%, var(--bg1), var(--bg2) 78%);
   color: var(--fg);
   box-shadow:
-    0 12px 0 rgba(0, 0, 0, 0.35),
-    0 20px 40px rgba(0, 0, 0, 0.45),
-    inset 0 -8px 20px rgba(0, 0, 0, 0.25),
-    inset 0 6px 14px rgba(255, 255, 255, 0.18);
+    0 10px 0 var(--edge),
+    0 30px 50px -20px color-mix(in srgb, var(--bg2) 70%, transparent),
+    inset 0 -10px 24px rgba(0, 0, 0, 0.1),
+    inset 0 8px 18px rgba(255, 255, 255, 0.45);
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
@@ -62,96 +64,107 @@ function onDown(ev: PointerEvent) {
 .buzzer:active {
   transform: translateY(8px);
   box-shadow:
-    0 4px 0 rgba(0, 0, 0, 0.35),
-    0 8px 20px rgba(0, 0, 0, 0.45),
-    inset 0 -8px 20px rgba(0, 0, 0, 0.25);
+    0 2px 0 var(--edge),
+    0 12px 24px -12px color-mix(in srgb, var(--bg2) 70%, transparent),
+    inset 0 -10px 24px rgba(0, 0, 0, 0.1);
 }
 .ring {
   position: absolute;
-  inset: -10px;
+  inset: -12px;
   border-radius: 50%;
   border: 4px solid transparent;
   pointer-events: none;
 }
 .title {
   font-size: clamp(1.6rem, 9vw, 3.2rem);
-  font-weight: 900;
+  font-weight: 800;
   line-height: 1.05;
   text-align: center;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
 }
 .sub {
   font-size: clamp(0.85rem, 3.6vw, 1.1rem);
-  font-weight: 600;
+  font-weight: 700;
   text-align: center;
   opacity: 0.9;
   line-height: 1.25;
 }
 
 .test {
-  --bg1: #4f7bff;
-  --bg2: #2a47b8;
+  --bg1: #a5b4fc;
+  --bg2: #4f46e5;
+  --edge: #3730a3;
   --fg: #fff;
 }
 .idle {
-  --bg1: #2d3657;
-  --bg2: #1c2340;
-  --fg: #8e99c4;
+  --bg1: #f7f8fc;
+  --bg2: #e4e8f1;
+  --edge: #cfd6e4;
+  --fg: #7c86a2;
 }
 .wait {
-  --bg1: #f0a53a;
-  --bg2: #b96c00;
-  --fg: #2b1700;
+  --bg1: #fde68a;
+  --bg2: #f59e0b;
+  --edge: #b45309;
+  --fg: #422006;
 }
 .go {
-  --bg1: #3fe07f;
-  --bg2: #129444;
-  --fg: #052b12;
+  --bg1: #86efac;
+  --bg2: #16a34a;
+  --edge: #166534;
+  --fg: #fff;
   animation: pulse 0.9s ease-in-out infinite;
 }
 .go .ring {
-  border-color: rgba(63, 224, 127, 0.55);
+  border-color: rgba(34, 197, 94, 0.45);
   animation: pulse 0.9s ease-in-out infinite;
 }
 .pressed {
-  --bg1: #7bf0a8;
-  --bg2: #2cb865;
-  --fg: #052b12;
+  --bg1: #dcfce7;
+  --bg2: #4ade80;
+  --edge: #16a34a;
+  --fg: #14532d;
 }
 .winner {
-  --bg1: #ffe07a;
-  --bg2: #f0a800;
-  --fg: #2b1d00;
+  --bg1: #fef3c7;
+  --bg2: #f59e0b;
+  --edge: #b45309;
+  --fg: #451a03;
   animation: pop 0.4s ease;
 }
 .winner .ring {
-  border-color: #ffd54a;
-  box-shadow: 0 0 40px rgba(255, 213, 74, 0.8);
+  border-color: #fbbf24;
+  box-shadow: 0 0 44px rgba(251, 191, 36, 0.7);
 }
 .other {
-  --bg1: #515c86;
-  --bg2: #2f375a;
-  --fg: #e6e9ff;
+  --bg1: #eef2ff;
+  --bg2: #a5b4fc;
+  --edge: #6366f1;
+  --fg: #1e1b4b;
 }
 .queue {
-  --bg1: #3cc8dc;
-  --bg2: #147a8c;
-  --fg: #03222a;
+  --bg1: #a5f3fc;
+  --bg2: #0891b2;
+  --edge: #155e75;
+  --fg: #fff;
 }
 .locked {
-  --bg1: #ef5b5b;
-  --bg2: #a51d1d;
+  --bg1: #fca5a5;
+  --bg2: #dc2626;
+  --edge: #991b1b;
   --fg: #fff;
 }
 .early {
-  --bg1: #ff8a3d;
-  --bg2: #c2410c;
+  --bg1: #fed7aa;
+  --bg2: #ea580c;
+  --edge: #9a3412;
   --fg: #fff;
   animation: shake 0.35s ease;
 }
 .offline {
-  --bg1: #444;
-  --bg2: #222;
-  --fg: #aaa;
+  --bg1: #e5e7eb;
+  --bg2: #9ca3af;
+  --edge: #6b7280;
+  --fg: #374151;
 }
 </style>

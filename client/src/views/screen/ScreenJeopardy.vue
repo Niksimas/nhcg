@@ -290,7 +290,7 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
       class="scores"
       size="large"
       :competitors="state.competitors"
-      :chooser-id="j.stage === 'board' ? j.chooserId : null"
+      :chooser-id="j.stage === 'board' && j.format === 'tv' ? j.chooserId : null"
       :active-id="answering"
       :locked-out="state.buzzer.lockedOut"
       :flash="flash"
@@ -326,10 +326,14 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .theme-big {
   font-size: clamp(2.4rem, 6vw, 6rem);
-  font-weight: 900;
+  font-weight: 800;
   text-transform: uppercase;
+  letter-spacing: -0.01em;
   line-height: 1.05;
-  color: var(--accent);
+  background: linear-gradient(100deg, #4f46e5, #7c3aed);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .assign-sub {
   font-size: clamp(1.4rem, 2.8vw, 2.6rem);
@@ -343,12 +347,14 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .slot {
   padding: 0.6em 1.2em;
-  border-radius: 14px;
+  border-radius: 16px;
   background: linear-gradient(180deg, var(--board), var(--board-2));
   border: 1px solid var(--board-edge);
+  box-shadow: var(--shadow);
   font-size: clamp(1.1rem, 2.2vw, 2rem);
   font-weight: 800;
   text-transform: uppercase;
+  color: #312e81;
 }
 .slot.secret {
   opacity: 0.75;
@@ -364,12 +370,14 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
   padding: 0.35em 0.9em;
   border-radius: 99px;
   border: 3px solid var(--c);
+  background: var(--panel);
   font-size: clamp(1rem, 2vw, 1.8rem);
   font-weight: 800;
 }
 .ready-chip.on {
   background: var(--c);
   color: var(--t);
+  box-shadow: 0 8px 20px -10px var(--c);
 }
 .ready-chip.small {
   font-size: clamp(0.9rem, 1.5vw, 1.3rem);
@@ -384,12 +392,14 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .price-chip {
   padding: 0.3em 0.8em;
-  border-radius: 10px;
+  border-radius: 14px;
   background: linear-gradient(180deg, var(--board), var(--board-2));
   border: 1px solid var(--board-edge);
+  box-shadow: var(--shadow);
   color: var(--accent);
   font-size: clamp(1.4rem, 3vw, 3rem);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .price-chip.played {
   opacity: 0.3;
@@ -407,9 +417,11 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 .strike-theme {
   min-width: min(60vw, 900px);
   padding: 0.15em 1.2em;
-  border-radius: 14px;
+  border-radius: 16px;
   background: linear-gradient(180deg, var(--board), var(--board-2));
-  border: 2px solid var(--board-edge);
+  border: 1px solid var(--board-edge);
+  box-shadow: var(--shadow);
+  color: #312e81;
   font-size: clamp(1.1rem, min(2.8vw, 4.6vh), 3rem);
   font-weight: 900;
   text-transform: uppercase;
@@ -442,10 +454,10 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 .round-title {
   text-align: center;
   font-size: clamp(1.4rem, 3vw, 3rem);
-  font-weight: 900;
+  font-weight: 800;
   color: var(--accent);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 .board-wrap {
   flex: 1;
@@ -465,6 +477,7 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .q-price {
   color: var(--accent);
+  letter-spacing: -0.02em;
 }
 .q-body {
   flex: 1;
@@ -475,16 +488,17 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
   justify-content: center;
   gap: 2vh;
   padding: 2vh 3vw;
-  border-radius: 24px;
+  border-radius: 28px;
   background: linear-gradient(180deg, var(--board), var(--board-2));
-  border: 2px solid var(--board-edge);
+  border: 1px solid var(--board-edge);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
   transition: box-shadow 0.3s;
 }
 .q-body.glow {
   box-shadow:
-    0 0 0 4px rgba(63, 224, 127, 0.85),
-    0 0 60px rgba(63, 224, 127, 0.45);
+    0 0 0 4px rgba(34, 197, 94, 0.75),
+    0 0 70px rgba(34, 197, 94, 0.35);
 }
 .answer-label {
   font-size: clamp(1rem, 1.8vw, 1.8rem);
@@ -494,7 +508,8 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .answer {
   font-size: clamp(2rem, 5vw, 5rem);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   text-align: center;
   color: var(--accent);
   animation: pop 0.45s ease;
@@ -505,6 +520,7 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
   padding: 0.2em 0.8em;
   border-radius: 99px;
   border: 3px solid var(--c);
+  background: color-mix(in srgb, var(--c) 10%, var(--panel));
 }
 .special {
   flex: 1;
@@ -516,9 +532,10 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
   align-items: center;
   justify-content: center;
   gap: 2vh;
-  border-radius: 24px;
-  background: radial-gradient(circle at 50% 40%, #3b2a8f, #150f3d);
-  border: 2px solid #6d55ff;
+  border-radius: 28px;
+  background: radial-gradient(circle at 50% 35%, #ffffff, #efeaff 70%);
+  border: 1px solid #d8ccfd;
+  box-shadow: var(--shadow-lg);
   animation: pop 0.5s ease;
   text-align: center;
 }
@@ -528,8 +545,8 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .special-title {
   font-size: clamp(2rem, min(6vw, 10vh), 6rem);
-  font-weight: 900;
-  color: var(--accent);
+  font-weight: 800;
+  color: #6d28d9;
   text-transform: uppercase;
   line-height: 1.1;
 }
@@ -546,16 +563,17 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .responder {
   padding: 0.3em 1em;
-  border-radius: 14px;
+  border-radius: 16px;
   background: var(--c);
   color: var(--t);
   font-size: clamp(1.3rem, 2.8vw, 2.8rem);
-  font-weight: 900;
+  font-weight: 800;
+  box-shadow: 0 14px 30px -14px var(--c);
   animation: pop 0.35s ease;
 }
 .go {
   font-size: clamp(1.3rem, 2.6vw, 2.6rem);
-  font-weight: 900;
+  font-weight: 800;
   color: var(--ok);
   animation: pulse 0.9s ease-in-out infinite;
 }
@@ -565,7 +583,7 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
   flex-wrap: wrap;
 }
 .wrong {
-  color: #ff9a9a;
+  color: var(--bad);
   font-size: clamp(1rem, 1.8vw, 1.8rem);
   font-weight: 700;
   text-decoration: line-through;
@@ -584,7 +602,8 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .big-text {
   font-size: clamp(2rem, 6vw, 6rem);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .final-themes {
   flex: 1;
@@ -598,9 +617,10 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
   font-size: clamp(1.5rem, 3.5vw, 3.5rem);
   font-weight: 800;
   padding: 0.2em 1.2em;
-  border-radius: 14px;
+  border-radius: 16px;
   background: linear-gradient(180deg, var(--board), var(--board-2));
-  border: 2px solid var(--board-edge);
+  border: 1px solid var(--board-edge);
+  box-shadow: var(--shadow);
   transition: opacity 0.3s;
 }
 .final-theme.removed {
@@ -610,7 +630,8 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 .final-theme-name {
   text-align: center;
   font-size: clamp(1.8rem, 4.5vw, 4.5rem);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .final-status {
   text-align: center;
@@ -644,25 +665,28 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
   max-width: 420px;
   flex: 1 1 220px;
   padding: 14px 18px;
-  border-radius: 16px;
+  border-radius: 18px;
   background: var(--panel);
-  border: 3px solid transparent;
+  border: 2px solid var(--line);
   border-top: 8px solid var(--c);
+  box-shadow: var(--shadow);
   text-align: center;
   transition: transform 0.25s;
 }
 .fp.current {
-  transform: scale(1.06);
+  transform: scale(1.03);
   border-color: var(--accent);
+  border-top-color: var(--c);
+  box-shadow: var(--ring), var(--shadow-lg);
 }
 .fp.ok {
-  background: rgba(34, 197, 94, 0.18);
+  background: var(--ok-soft);
 }
 .fp.bad {
-  background: rgba(239, 68, 68, 0.18);
+  background: var(--bad-soft);
 }
 .fp-name {
-  font-weight: 900;
+  font-weight: 800;
   font-size: clamp(1.1rem, 2vw, 2rem);
 }
 .fp-score {
@@ -691,9 +715,10 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .pod {
   width: min(26vw, 360px);
-  border-radius: 20px 20px 0 0;
-  background: var(--c);
+  border-radius: 24px 24px 0 0;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 85%, white), var(--c));
   color: var(--t);
+  box-shadow: 0 24px 50px -20px var(--c);
   text-align: center;
   padding: 2vh 1vw;
   display: flex;
@@ -722,11 +747,11 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .pod-name {
   font-size: clamp(1.3rem, 2.6vw, 2.8rem);
-  font-weight: 900;
+  font-weight: 800;
 }
 .pod-score {
   font-size: clamp(1.5rem, 3.4vw, 3.6rem);
-  font-weight: 900;
+  font-weight: 800;
 }
 .rest {
   display: flex;

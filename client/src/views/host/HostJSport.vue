@@ -263,10 +263,10 @@ async function select(id: string, played: boolean) {
 .kinds {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
   padding: 3px;
   border-radius: 12px;
-  background: var(--panel-2);
+  background: var(--panel-3);
 }
 .kind {
   border: none;
@@ -277,9 +277,13 @@ async function select(id: string, played: boolean) {
   border-radius: 9px;
   cursor: pointer;
 }
+.kind:hover:not(.on) {
+  color: var(--text);
+}
 .kind.on {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
 }
 .hint {
   margin: -4px 0 0;
@@ -313,7 +317,7 @@ async function select(id: string, played: boolean) {
   min-width: 0;
   padding: 4px 6px;
   border-radius: 8px;
-  background: var(--bg-2);
+  background: var(--panel-2);
   font-size: 0.9rem;
 }
 .cell.head {
@@ -365,10 +369,13 @@ async function select(id: string, played: boolean) {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--c);
   color: var(--t);
   font-weight: 700;
+}
+.tp .select {
+  color: var(--text);
 }
 .tp .select {
   width: auto;
@@ -412,14 +419,22 @@ async function select(id: string, played: boolean) {
   justify-content: space-between;
   gap: 10px;
   padding: 10px 14px;
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid var(--board-edge);
   background: linear-gradient(180deg, var(--board), var(--board-2));
+  box-shadow: var(--shadow-sm);
   color: var(--text);
   font-weight: 800;
   text-transform: uppercase;
   cursor: pointer;
   text-align: left;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+.strike-theme:hover:not(:disabled) {
+  border-color: #f5b5b5;
+  background: var(--bad-soft);
 }
 .strike-theme.struck {
   opacity: 0.35;
@@ -431,7 +446,7 @@ async function select(id: string, played: boolean) {
   align-items: center;
   gap: 4px;
   font-size: 0.8rem;
-  color: #ff9a9a;
+  color: var(--bad);
   text-transform: none;
 }
 .cell.struck {

@@ -1,31 +1,51 @@
+/* Светлая тема: белые карточки на светло-сером фоне, индиго-акцент, мягкие тени. */
 :root {
-  --bg: #0a0f24;
-  --bg-2: #0f1733;
-  --panel: #141d3f;
-  --panel-2: #1a2550;
-  --panel-3: #22306a;
-  --line: rgba(255, 255, 255, 0.1);
-  --line-2: rgba(255, 255, 255, 0.18);
-  --text: #eef1ff;
-  --muted: #9aa6d6;
-  --faint: #6d79a8;
-  --accent: #ffc83d;
-  --accent-2: #ffb000;
-  --accent-text: #2a1d00;
-  --board: #1c3aa9;
-  --board-2: #142b85;
-  --board-edge: #3558d8;
-  --ok: #22c55e;
-  --ok-2: #16a34a;
-  --bad: #ef4444;
-  --bad-2: #dc2626;
-  --warn: #f59e0b;
-  --info: #38bdf8;
-  --radius: 14px;
-  --radius-sm: 9px;
-  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
-  color-scheme: dark;
+  /* поверхности */
+  --bg: #f3f5fa;
+  --bg-2: #f8f9fc; /* поля ввода и вложенные области */
+  --panel: #ffffff;
+  --panel-2: #f5f6fb; /* блоки внутри карточек */
+  --panel-3: #eaedf5; /* чипы, нейтральные плашки */
+  --line: #e6e9f1;
+  --line-2: #d5dae6;
+
+  /* текст */
+  --text: #151a2d;
+  --muted: #5f6882;
+  --faint: #8f97ad;
+
+  /* акцент (кнопки, выделение, цены на табло) */
+  --accent: #4f46e5;
+  --accent-2: #7c3aed;
+  --accent-soft: #eef0ff;
+  --accent-text: #ffffff;
+  --gold: #f59e0b;
+  --gold-soft: #fff6e0;
+
+  /* табло «Своей игры» */
+  --board: #ffffff;
+  --board-2: #f7f8ff;
+  --board-edge: #dde2f3;
+
+  /* состояния */
+  --ok: #16a34a;
+  --ok-2: #15803d;
+  --ok-soft: #e8f7ee;
+  --bad: #dc2626;
+  --bad-2: #b91c1c;
+  --bad-soft: #fdeded;
+  --warn: #d97706;
+  --warn-soft: #fff4e2;
+  --info: #2563eb;
+
+  --radius: 16px;
+  --radius-sm: 10px;
+  --shadow-sm: 0 1px 2px rgba(21, 26, 45, 0.06);
+  --shadow: 0 1px 2px rgba(21, 26, 45, 0.04), 0 6px 20px rgba(21, 26, 45, 0.07);
+  --shadow-lg: 0 4px 10px rgba(21, 26, 45, 0.05), 0 22px 50px rgba(21, 26, 45, 0.14);
+  --ring: 0 0 0 3px rgba(79, 70, 229, 0.22);
+  --font: 'Manrope Variable', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  color-scheme: light;
 }
 
 *,
@@ -43,8 +63,9 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: 16px;
-  line-height: 1.4;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -52,8 +73,13 @@ body {
   min-height: 100%;
 }
 
+::selection {
+  background: rgba(79, 70, 229, 0.18);
+}
+
 a {
-  color: var(--info);
+  color: var(--accent);
+  text-underline-offset: 2px;
 }
 
 h1,
@@ -62,6 +88,7 @@ h3,
 h4 {
   margin: 0 0 0.5em;
   line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 button,
@@ -72,10 +99,18 @@ textarea {
   color: inherit;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ───────────── кнопки ───────────── */
+
 .btn {
-  --btn-bg: var(--panel-3);
+  --btn-bg: var(--panel);
   --btn-fg: var(--text);
   --btn-border: var(--line-2);
+  --btn-shadow: var(--shadow-sm);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -85,19 +120,23 @@ textarea {
   border: 1px solid var(--btn-border);
   background: var(--btn-bg);
   color: var(--btn-fg);
-  font-weight: 600;
+  box-shadow: var(--btn-shadow);
+  font-weight: 700;
   cursor: pointer;
   user-select: none;
   white-space: nowrap;
   transition:
     transform 0.06s ease,
     filter 0.15s ease,
-    background 0.15s ease;
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
   text-decoration: none;
   touch-action: manipulation;
 }
 .btn:hover:not(:disabled) {
-  filter: brightness(1.15);
+  --btn-bg: var(--panel-2);
+  --btn-border: #c3c9d9;
 }
 .btn:active:not(:disabled) {
   transform: translateY(1px) scale(0.98);
@@ -106,47 +145,79 @@ textarea {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.btn.primary {
-  --btn-bg: linear-gradient(180deg, var(--accent), var(--accent-2));
-  --btn-fg: var(--accent-text);
+.btn.primary,
+.btn.ok,
+.btn.bad,
+.btn.blue {
+  --btn-fg: #fff;
   --btn-border: transparent;
+}
+.btn.primary {
+  --btn-bg: linear-gradient(135deg, #6366f1, var(--accent) 55%, #4338ca);
+  --btn-shadow: 0 6px 16px -6px rgba(79, 70, 229, 0.65);
 }
 .btn.ok {
-  --btn-bg: linear-gradient(180deg, #2fd46b, var(--ok-2));
-  --btn-fg: #fff;
-  --btn-border: transparent;
+  --btn-bg: linear-gradient(135deg, #22c55e, var(--ok));
+  --btn-shadow: 0 6px 16px -6px rgba(22, 163, 74, 0.6);
 }
 .btn.bad {
-  --btn-bg: linear-gradient(180deg, #f35b5b, var(--bad-2));
-  --btn-fg: #fff;
-  --btn-border: transparent;
+  --btn-bg: linear-gradient(135deg, #f05252, var(--bad));
+  --btn-shadow: 0 6px 16px -6px rgba(220, 38, 38, 0.55);
 }
 .btn.blue {
-  --btn-bg: linear-gradient(180deg, #4a74ff, #2f55e0);
-  --btn-fg: #fff;
+  --btn-bg: linear-gradient(135deg, #3b82f6, var(--info));
+  --btn-shadow: 0 6px 16px -6px rgba(37, 99, 235, 0.55);
+}
+.btn.primary:hover:not(:disabled) {
+  --btn-bg: linear-gradient(135deg, #6366f1, var(--accent) 55%, #4338ca);
   --btn-border: transparent;
+  filter: brightness(1.08);
+}
+.btn.ok:hover:not(:disabled) {
+  --btn-bg: linear-gradient(135deg, #22c55e, var(--ok));
+  --btn-border: transparent;
+  filter: brightness(1.06);
+}
+.btn.bad:hover:not(:disabled) {
+  --btn-bg: linear-gradient(135deg, #f05252, var(--bad));
+  --btn-border: transparent;
+  filter: brightness(1.06);
+}
+.btn.blue:hover:not(:disabled) {
+  --btn-bg: linear-gradient(135deg, #3b82f6, var(--info));
+  --btn-border: transparent;
+  filter: brightness(1.06);
 }
 .btn.ghost {
   --btn-bg: transparent;
-  --btn-border: var(--line-2);
+  --btn-shadow: none;
+}
+.btn.ghost:hover:not(:disabled) {
+  --btn-bg: var(--panel);
 }
 .btn.flat {
   --btn-bg: transparent;
   --btn-border: transparent;
+  --btn-shadow: none;
+}
+.btn.flat:hover:not(:disabled) {
+  --btn-bg: var(--panel-3);
+  --btn-border: transparent;
 }
 .btn.big {
-  font-size: 1.15rem;
+  font-size: 1.12rem;
   padding: 0.8em 1.4em;
-  border-radius: var(--radius);
+  border-radius: 14px;
 }
 .btn.huge {
-  font-size: 1.5rem;
-  padding: 0.9em 1.6em;
+  font-size: 1.45rem;
+  padding: 0.85em 1.6em;
   border-radius: 18px;
 }
 .btn.small {
   font-size: 0.85rem;
   padding: 0.35em 0.7em;
+  border-radius: 8px;
 }
 .btn.icon {
   padding: 0.45em;
@@ -156,6 +227,8 @@ textarea {
   width: 100%;
 }
 
+/* ───────────── поля ввода ───────────── */
+
 .input,
 .select,
 .textarea {
@@ -163,15 +236,30 @@ textarea {
   padding: 0.6em 0.8em;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line-2);
-  background: var(--bg-2);
+  background: var(--panel);
   color: var(--text);
   outline: none;
-  transition: border-color 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--faint);
 }
 .input:focus,
 .select:focus,
 .textarea:focus {
   border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+.select {
+  appearance: none;
+  padding-right: 2em;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%235f6882' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75em center;
+  cursor: pointer;
 }
 .textarea {
   resize: vertical;
@@ -182,12 +270,19 @@ textarea {
   padding: 0.3em 0.5em;
   font-size: 0.9rem;
 }
+.select.small {
+  padding-right: 1.8em;
+  background-position: right 0.55em center;
+}
+
+/* ───────────── карточки и мелочи ───────────── */
 
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 1rem;
+  box-shadow: var(--shadow);
 }
 
 .chip {
@@ -198,6 +293,7 @@ textarea {
   border-radius: 999px;
   background: var(--panel-3);
   font-size: 0.85rem;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -206,9 +302,9 @@ textarea {
   padding: 0 0.4em;
   border-radius: 5px;
   border: 1px solid currentColor;
-  opacity: 0.75;
+  opacity: 0.7;
   font-size: 0.75em;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.5;
   font-family: var(--font);
 }
@@ -257,9 +353,9 @@ textarea {
   flex: none;
 }
 .label {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   color: var(--muted);
   font-weight: 700;
 }
@@ -272,6 +368,7 @@ textarea {
 .field > span {
   font-size: 0.85rem;
   color: var(--muted);
+  font-weight: 600;
 }
 
 .check {
@@ -279,7 +376,7 @@ textarea {
   align-items: flex-start;
   gap: 0.55rem;
   cursor: pointer;
-  line-height: 1.3;
+  line-height: 1.35;
 }
 .check input {
   width: 1.15em;
@@ -292,7 +389,16 @@ textarea {
 .scroll {
   overflow: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--panel-3) transparent;
+  scrollbar-color: #c9cfdd transparent;
+}
+
+/* Логотип: кнопка-«пищалка» на индиго-фоне (как значок вкладки). */
+.brand-mark {
+  display: inline-block;
+  width: 30px;
+  height: 30px;
+  flex: none;
+  background: url('/favicon.svg') center / contain no-repeat;
 }
 
 @keyframes pulse {
@@ -306,7 +412,7 @@ textarea {
 }
 @keyframes flash {
   0% {
-    filter: brightness(2.2);
+    filter: brightness(1.25) saturate(1.3);
     transform: scale(1.06);
   }
   100% {

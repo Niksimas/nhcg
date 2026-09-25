@@ -244,7 +244,7 @@ function fmtTime(ts: number) {
     <template v-else>
       <header class="bar">
         <div class="brand">
-          <span class="logo-dot" />
+          <span class="brand-mark" />
           <button v-if="roomCode" class="room-chip" title="Код комнаты — игроки вводят его на главной странице сайта" @click="modal = 'join'">
             <span class="room-lbl">Комната</span> <b class="nums">{{ formatCode(roomCode) }}</b>
           </button>
@@ -363,7 +363,7 @@ function fmtTime(ts: number) {
   color: var(--accent);
 }
 .err {
-  color: #ff8a8a;
+  color: var(--bad);
   margin: 0;
 }
 .small {
@@ -373,10 +373,14 @@ function fmtTime(ts: number) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: var(--bg-2);
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
   flex-wrap: wrap;
+  position: relative;
+  z-index: 5;
 }
 .brand {
   display: flex;
@@ -389,9 +393,9 @@ function fmtTime(ts: number) {
   gap: 6px;
   padding: 5px 10px;
   border-radius: 10px;
-  border: 1px solid var(--line-2);
-  background: var(--panel-2);
-  color: var(--text);
+  border: 1px solid transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 1.05rem;
   cursor: pointer;
   white-space: nowrap;
@@ -403,31 +407,32 @@ function fmtTime(ts: number) {
   font-size: 0.75rem;
   color: var(--muted);
 }
-.logo-dot {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #ff7676, #c21c1c);
-  box-shadow: 0 0 0 3px var(--accent);
-}
 .modes {
   display: flex;
-  background: var(--panel);
-  border-radius: 10px;
+  background: var(--panel-3);
+  border-radius: 12px;
   padding: 3px;
+  gap: 2px;
 }
 .mode-btn {
   border: none;
   background: transparent;
   color: var(--muted);
-  font-weight: 800;
+  font-weight: 700;
   padding: 0.4em 0.9em;
-  border-radius: 8px;
+  border-radius: 9px;
   cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+.mode-btn:hover:not(.on) {
+  color: var(--text);
 }
 .mode-btn.on {
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
 }
 .pack-btn {
   display: flex;
@@ -437,9 +442,14 @@ function fmtTime(ts: number) {
   background: transparent;
   border: 1px dashed var(--line-2);
   color: var(--text);
+  font-weight: 600;
   padding: 0.35em 0.7em;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
+}
+.pack-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .auto-tag {
   font-size: 0.6rem;
@@ -449,7 +459,8 @@ function fmtTime(ts: number) {
 .chip.mini {
   padding: 0 0.45em;
   font-size: 0.75rem;
-  background: var(--ok-2);
+  background: var(--ok);
+  color: #fff;
 }
 .join-btn {
   display: flex;
@@ -457,14 +468,18 @@ function fmtTime(ts: number) {
   gap: 8px;
   background: var(--panel);
   border: 1px solid var(--line-2);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 3px 10px 3px 3px;
   cursor: pointer;
   color: var(--text);
+  box-shadow: var(--shadow-sm);
+}
+.join-btn:hover {
+  border-color: var(--accent);
 }
 .mini-qr {
   width: 34px;
-  border-radius: 6px;
+  border-radius: 8px;
 }
 .join-url {
   font-weight: 800;
@@ -485,8 +500,9 @@ function fmtTime(ts: number) {
 }
 .side,
 .right {
-  padding: 12px;
+  padding: 14px 12px;
   border-right: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.55);
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -496,7 +512,7 @@ function fmtTime(ts: number) {
   border-left: 1px solid var(--line);
 }
 .main {
-  padding: 14px 18px 30px;
+  padding: 16px 20px 30px;
 }
 .log {
   display: flex;
@@ -528,19 +544,22 @@ function fmtTime(ts: number) {
 }
 .toast {
   padding: 10px 14px;
-  border-radius: 10px;
-  background: var(--panel-3);
-  border: 1px solid var(--line-2);
-  box-shadow: var(--shadow);
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  font-weight: 600;
   max-width: 420px;
 }
 .toast.err {
-  background: #5a1d1d;
-  border-color: #b91c1c;
+  background: var(--bad-soft);
+  border-color: #f5c2c2;
+  color: var(--bad-2);
 }
 .toast.ok {
-  background: #14432a;
-  border-color: #15803d;
+  background: var(--ok-soft);
+  border-color: #b5e5c6;
+  color: var(--ok-2);
 }
 @media (max-width: 1180px) {
   .layout {

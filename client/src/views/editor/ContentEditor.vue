@@ -130,8 +130,8 @@ function move(i: number, d: -1 | 1) {
   gap: 6px;
   align-items: flex-start;
   padding: 6px;
-  border-radius: 10px;
-  background: var(--bg-2);
+  border-radius: 12px;
+  background: var(--panel-2);
   border: 1px solid var(--line);
 }
 .item-body {

@@ -83,9 +83,11 @@ function label(t: { index: number; name: string | null }) {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px;
-  border-radius: 12px;
-  background: var(--panel-2);
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
 }
 .theme-name {
   font-weight: 800;
@@ -104,9 +106,9 @@ function label(t: { index: number; name: string | null }) {
 }
 .member {
   padding: 8px 12px;
-  border-radius: 10px;
-  border: 2px solid var(--line-2);
-  background: var(--bg-2);
+  border-radius: 12px;
+  border: 1.5px solid var(--line-2);
+  background: var(--panel);
   color: var(--text);
   font-weight: 700;
   font-size: 1rem;
@@ -118,6 +120,7 @@ function label(t: { index: number; name: string | null }) {
   background: var(--accent);
   color: var(--accent-text);
   border-color: transparent;
+  box-shadow: 0 6px 14px -6px rgba(79, 70, 229, 0.7);
 }
 .member.used:not(.on) {
   opacity: 0.6;
@@ -136,6 +139,6 @@ function label(t: { index: number; name: string | null }) {
 .sent {
   text-align: center;
   font-weight: 700;
-  color: #7bf0a8;
+  color: var(--ok);
 }
 </style>

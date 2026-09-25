@@ -78,12 +78,20 @@ td {
   background: var(--panel-2);
   padding: 0.35em 0.5em;
   text-align: center;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 td:first-child {
-  border-radius: 8px 0 0 8px;
+  border-left: 1px solid var(--line);
 }
 td:last-child {
-  border-radius: 0 8px 8px 0;
+  border-right: 1px solid var(--line);
+}
+td:first-child {
+  border-radius: 10px 0 0 10px;
+}
+td:last-child {
+  border-radius: 0 10px 10px 0;
 }
 td.name {
   text-align: left;
@@ -110,10 +118,11 @@ td.total {
   color: var(--accent);
 }
 tr.hl td {
-  background: color-mix(in srgb, var(--c) 25%, var(--panel-2));
+  background: color-mix(in srgb, var(--c) 14%, var(--panel));
 }
 tr.win td {
-  background: color-mix(in srgb, var(--accent) 22%, var(--panel-2));
+  background: var(--gold-soft);
+  border-color: #f6d58f;
 }
 .place {
   width: 2.2em;
@@ -124,6 +133,12 @@ tr.win td {
 }
 .screen td {
   padding: 0.35em 0.7em;
-  background: rgba(20, 29, 63, 0.85);
+  background: var(--panel);
+}
+.screen tr.hl td {
+  background: color-mix(in srgb, var(--c) 14%, var(--panel));
+}
+.screen tr.win td {
+  background: var(--gold-soft);
 }
 </style>

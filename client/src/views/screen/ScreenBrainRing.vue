@@ -207,10 +207,11 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
 }
 .team {
   position: relative;
-  border-radius: 22px;
+  border-radius: 26px;
   padding: 2vh 1.5vw 2.5vh;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 35%, #0f1733), #0f1733);
-  border: 4px solid color-mix(in srgb, var(--c) 70%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--c) 16%, white), var(--panel) 70%);
+  border: 3px solid color-mix(in srgb, var(--c) 55%, transparent);
+  box-shadow: var(--shadow-lg);
   text-align: center;
   transition:
     transform 0.25s,
@@ -218,20 +219,27 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
 }
 .team-name {
   font-size: clamp(1.3rem, 3vw, 3.2rem);
-  font-weight: 900;
+  font-weight: 800;
+  color: color-mix(in srgb, var(--c) 75%, black);
 }
 .team-score {
   font-size: clamp(3rem, 9vw, 9rem);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.03em;
   line-height: 1;
-  color: #fff;
+  color: var(--text);
 }
 .team.active {
   background: var(--c);
+  border-color: var(--c);
   color: var(--t);
   transform: scale(1.05);
-  box-shadow: 0 0 80px color-mix(in srgb, var(--c) 70%, transparent);
+  box-shadow: 0 24px 70px -20px var(--c);
   animation: pop 0.35s ease;
+}
+.team.active .team-name,
+.team.winner .team-name {
+  color: var(--t);
 }
 .team.active .team-score {
   color: var(--t);
@@ -241,6 +249,7 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
 }
 .team.winner {
   background: var(--c);
+  border-color: var(--c);
   color: var(--t);
   animation: pulse 1.2s ease-in-out infinite;
 }
@@ -255,7 +264,8 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
   margin-top: 1vh;
   padding: 0.15em 0.8em;
   border-radius: 99px;
-  background: rgba(0, 0, 0, 0.3);
+  background: var(--panel-3);
+  color: var(--muted);
   font-weight: 800;
   font-size: clamp(0.9rem, 1.6vw, 1.6rem);
 }
@@ -265,10 +275,12 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
   animation: shake 0.4s ease;
 }
 .tag.on {
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(255, 255, 255, 0.25);
+  color: inherit;
 }
 .tag.warn {
-  color: var(--warn);
+  background: var(--warn-soft);
+  color: #b45309;
 }
 .middle {
   flex: 1 1 auto;
@@ -290,7 +302,7 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
 }
 .track {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.1);
+  stroke: var(--panel-3);
   stroke-width: 14;
 }
 .progress {
@@ -314,14 +326,16 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
   align-items: center;
   justify-content: center;
   font-size: clamp(2.5rem, 8vh, 6rem);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .clock.warn .secs {
   color: var(--bad);
 }
 .status {
   font-size: clamp(1.6rem, 4vw, 4.2rem);
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.01em;
   max-width: 55vw;
 }
 .status.armed {
@@ -347,9 +361,10 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
   justify-content: center;
   gap: 2vh;
   padding: 2vh 3vw;
-  border-radius: 22px;
+  border-radius: 26px;
   background: var(--panel);
   border: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 .answer {

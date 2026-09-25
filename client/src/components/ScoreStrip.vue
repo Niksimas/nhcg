@@ -53,10 +53,11 @@ withDefaults(
   max-width: 260px;
   flex: 1 1 140px;
   padding: 0.5em 0.9em 0.55em;
-  border-radius: 12px;
-  background: var(--panel-2);
-  border: 2px solid transparent;
+  border-radius: 14px;
+  background: var(--panel);
+  border: 1px solid var(--line);
   border-top: 5px solid var(--c);
+  box-shadow: var(--shadow);
   text-align: center;
   transition:
     transform 0.2s,
@@ -75,17 +76,23 @@ withDefaults(
   color: var(--bad);
 }
 .tile.chooser {
-  border-color: rgba(255, 200, 61, 0.55);
+  border-color: var(--gold);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--gold) 45%, transparent),
+    var(--shadow);
 }
 .chooser-mark {
-  color: var(--accent);
+  color: var(--gold);
   font-size: 0.8em;
 }
 .tile.active {
   background: var(--c);
+  border-color: var(--c);
   color: var(--t);
   transform: translateY(-4px) scale(1.04);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5), 0 10px 30px rgba(0, 0, 0, 0.4);
+  box-shadow:
+    0 0 0 3px #fff,
+    0 16px 34px -12px var(--c);
 }
 .tile.active .score {
   color: var(--t);

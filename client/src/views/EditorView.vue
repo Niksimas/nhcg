@@ -461,9 +461,11 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  background: var(--bg-2);
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
   flex-wrap: wrap;
 }
 .title-wrap {
@@ -524,21 +526,25 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 8px;
-  border-radius: 8px;
-  background: var(--panel-2);
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   font-weight: 700;
 }
 .round.on {
-  background: var(--accent);
+  background: linear-gradient(135deg, #6366f1, var(--accent));
+  border-color: transparent;
   color: var(--accent-text);
 }
 .round.on .faint {
   color: var(--accent-text);
 }
 .round.final:not(.on) {
-  border: 1px solid rgba(255, 200, 61, 0.4);
+  border-color: #f6d58f;
+  background: var(--gold-soft);
 }
 .warnings {
   margin-top: 10px;
@@ -547,7 +553,7 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
   gap: 4px;
 }
 .warn {
-  color: #ffd08a;
+  color: #b45309;
 }
 .themes {
   display: flex;
@@ -566,7 +572,8 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
   padding-bottom: 2px;
 }
 .theme.on {
-  border-color: rgba(255, 200, 61, 0.5);
+  border-color: var(--accent);
+  box-shadow: var(--ring), var(--shadow);
 }
 .theme-head {
   display: flex;
@@ -589,9 +596,10 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
   gap: 2px;
   width: 150px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: 10px;
   border: 1px solid var(--board-edge);
   background: linear-gradient(180deg, var(--board), var(--board-2));
+  box-shadow: var(--shadow-sm);
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -603,7 +611,8 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
   outline: 2px solid var(--accent);
 }
 .q-chip.special {
-  background: linear-gradient(180deg, #3b2a8f, #241a5c);
+  background: linear-gradient(180deg, #f5f3ff, #ede9fe);
+  border-color: #d8ccfd;
 }
 .q-chip.empty {
   border-color: var(--warn);
@@ -637,7 +646,8 @@ const exportUrl = computed(() => downloadUrl(`/packs/${encodeURIComponent(packId
   flex-direction: column;
   gap: 8px;
   padding: 10px;
-  background: color-mix(in srgb, #6d55ff 10%, var(--panel));
+  background: #f5f3ff;
+  border-color: #d8ccfd;
 }
 .answer {
   font-weight: 800;

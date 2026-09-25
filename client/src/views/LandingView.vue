@@ -102,7 +102,7 @@ onMounted(async () => {
     <div class="wrap">
       <header class="hero">
         <div class="logo-buzz" />
-        <h1>Своя игра · Брейн-ринг</h1>
+        <h1>Своя игра · Брейн-ринг · Хамса</h1>
         <p class="muted">Телефоны игроков — кнопки, экран — табло. В одной комнате или через интернет.</p>
       </header>
 
@@ -180,7 +180,8 @@ onMounted(async () => {
   height: 100vh;
   height: 100dvh;
   background:
-    radial-gradient(ellipse at 50% -10%, #1c2b70 0%, transparent 60%),
+    radial-gradient(70vw 40vh at 10% -5%, rgba(99, 102, 241, 0.16), transparent 70%),
+    radial-gradient(60vw 40vh at 100% 0%, rgba(236, 72, 153, 0.1), transparent 70%),
     var(--bg);
 }
 .wrap {
@@ -199,20 +200,24 @@ onMounted(async () => {
   gap: 6px;
 }
 .hero h1 {
-  font-size: clamp(1.6rem, 6vw, 2.2rem);
-  margin: 6px 0 0;
+  font-size: clamp(1.6rem, 6vw, 2.3rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  margin: 10px 0 0;
+  background: linear-gradient(100deg, #4f46e5, #7c3aed 60%, #db2777);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .hero p {
   margin: 0;
 }
 .logo-buzz {
-  width: 64px;
-  height: 64px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #ff7676, #c21c1c);
-  box-shadow:
-    0 0 0 5px var(--accent),
-    0 10px 30px rgba(255, 80, 80, 0.35);
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  background: url('/favicon.svg') center / contain no-repeat;
+  box-shadow: 0 18px 34px -14px rgba(79, 70, 229, 0.7);
 }
 .block {
   display: flex;
@@ -222,6 +227,7 @@ onMounted(async () => {
 .block h2 {
   margin: 0;
   font-size: 1.3rem;
+  font-weight: 800;
 }
 .block p {
   margin: 0;
@@ -243,7 +249,7 @@ onMounted(async () => {
   align-self: flex-start;
 }
 .err {
-  color: #ff8a8a;
+  color: var(--bad);
 }
 .small {
   font-size: 0.85rem;
@@ -256,7 +262,8 @@ onMounted(async () => {
   background: none;
   border: none;
   padding: 2px 0;
-  color: var(--info);
+  color: var(--accent);
+  font-weight: 600;
   cursor: pointer;
 }
 .linkish:disabled {
@@ -273,8 +280,9 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  border-radius: 12px;
   background: var(--panel-2);
+  border: 1px solid var(--line);
 }
 .room-code {
   font-size: 1.15rem;
@@ -296,10 +304,10 @@ onMounted(async () => {
   flex: none;
   width: 28px;
   height: 28px;
-  border-radius: 50%;
+  border-radius: 9px;
   display: grid;
   place-items: center;
-  background: var(--panel-3);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 footer {

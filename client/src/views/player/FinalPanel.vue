@@ -192,14 +192,14 @@ const dirty = computed(() => answer.value.trim() !== (answerSent.value ?? '').tr
   font-size: 1.1rem;
 }
 .error {
-  color: #ff8a8a;
+  color: var(--bad);
   text-align: center;
   margin: 0;
 }
 .result {
   text-align: center;
   font-size: 1.6rem;
-  font-weight: 900;
+  font-weight: 800;
   margin: 0;
 }
 .result.ok {

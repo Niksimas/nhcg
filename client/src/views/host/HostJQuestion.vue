@@ -238,7 +238,7 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   font-weight: 600;
 }
 .tp {
-  padding: 3px 10px;
+  padding: 3px 11px;
   border-radius: 99px;
   background: var(--c);
   color: var(--t);
@@ -250,7 +250,8 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   font-size: 1.6rem;
 }
 .type {
-  background: #3b2a8f;
+  background: #ede9fe;
+  color: #5b21b6;
 }
 .q-grid {
   display: grid;
@@ -264,13 +265,14 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   gap: 10px;
 }
 .a-card {
-  border-color: rgba(255, 200, 61, 0.4);
-  background: color-mix(in srgb, var(--accent) 7%, var(--panel));
+  border-color: #f6d58f;
+  background: linear-gradient(180deg, var(--gold-soft), var(--panel) 70%);
 }
 .answer {
   font-size: 1.5rem;
-  font-weight: 900;
-  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: #b45309;
 }
 .a-card.hidden .answer,
 .a-card.hidden .comment,
@@ -300,8 +302,8 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border-color: #6d55ff;
-  background: color-mix(in srgb, #6d55ff 12%, var(--panel));
+  border-color: #c4b5fd;
+  background: linear-gradient(180deg, #f5f3ff, var(--panel) 80%);
 }
 .special-title {
   font-size: 1.3rem;
@@ -319,7 +321,7 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   padding: 0.5em 0.9em;
   border-radius: 10px;
   border: 2px solid var(--c);
-  background: transparent;
+  background: var(--panel);
   color: var(--text);
   font-weight: 700;
   cursor: pointer;
@@ -347,7 +349,7 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   gap: 10px;
   font-size: 1.3rem;
   font-weight: 800;
-  color: #7ef0a8;
+  color: var(--ok);
 }
 .pulse-dot {
   width: 14px;
@@ -362,7 +364,8 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   background: var(--c);
   color: var(--t);
   font-size: 1.6rem;
-  font-weight: 900;
+  font-weight: 800;
+  box-shadow: 0 10px 24px -10px var(--c);
   animation: pop 0.3s ease;
 }
 .react {
@@ -386,10 +389,12 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   gap: 6px;
 }
 .chip.ok {
-  background: rgba(34, 197, 94, 0.25);
+  background: var(--ok-soft);
+  color: var(--ok-2);
 }
 .chip.bad {
-  background: rgba(239, 68, 68, 0.25);
+  background: var(--bad-soft);
+  color: var(--bad-2);
 }
 @media (max-width: 900px) {
   .q-grid {

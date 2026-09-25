@@ -127,7 +127,7 @@ defineExpose({ restart })
   max-width: 100%;
   object-fit: contain;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--panel-2);
 }
 .hint {
   display: flex;
@@ -135,7 +135,7 @@ defineExpose({ restart })
   gap: 0.5em;
   padding: 0.5em 0.9em;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--panel-3);
   color: var(--muted);
   font-size: 0.95rem;
 }

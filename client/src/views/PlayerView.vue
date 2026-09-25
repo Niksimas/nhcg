@@ -524,7 +524,7 @@ const pingClass = computed(() => {
 </script>
 
 <template>
-  <div class="player" :style="{ '--me': me?.color ?? '#4f7bff', '--me-t': textOn(me?.color ?? '#4f7bff') }">
+  <div class="player" :style="{ '--me': me?.color ?? '#6366f1', '--me-t': textOn(me?.color ?? '#6366f1') }">
     <!-- Нет подключения и ещё не вошли -->
     <div v-if="status === 'noroom'" class="splash center">
       <h2>{{ conn.errorCode.value === 'room_closed' ? 'Игра завершена' : 'Игра не найдена' }}</h2>
@@ -697,7 +697,8 @@ const pingClass = computed(() => {
   flex-direction: column;
   overflow: hidden;
   background:
-    radial-gradient(ellipse at 50% 120%, color-mix(in srgb, var(--me) 22%, transparent), transparent 60%),
+    radial-gradient(ellipse at 50% 115%, color-mix(in srgb, var(--me) 20%, transparent), transparent 62%),
+    radial-gradient(ellipse at 100% -10%, rgba(99, 102, 241, 0.1), transparent 55%),
     var(--bg);
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   user-select: none;
@@ -733,14 +734,16 @@ const pingClass = computed(() => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(8px);
   border-bottom: 3px solid var(--me);
+  box-shadow: var(--shadow-sm);
 }
 .me-dot {
   width: 14px;
   height: 14px;
   background: var(--me);
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--me) 25%, transparent);
 }
 .who {
   line-height: 1.15;
@@ -755,7 +758,8 @@ const pingClass = computed(() => {
 }
 .score {
   font-size: 1.5rem;
-  font-weight: 900;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   color: var(--accent);
 }
 .score.neg {
@@ -839,8 +843,10 @@ const pingClass = computed(() => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 10px;
+  border-radius: 14px;
   background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
   font-size: 1.1rem;
 }
 .results li.mine {
@@ -855,10 +861,12 @@ const pingClass = computed(() => {
   left: 50%;
   bottom: calc(24px + env(safe-area-inset-bottom));
   transform: translateX(-50%);
-  background: rgba(20, 29, 63, 0.95);
-  border: 1px solid var(--line-2);
+  background: rgba(21, 26, 45, 0.92);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
   padding: 10px 16px;
-  border-radius: 12px;
+  border-radius: 14px;
   z-index: 50;
   max-width: 90vw;
   text-align: center;

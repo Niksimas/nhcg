@@ -125,22 +125,25 @@ function submit(takeover = false) {
   margin-bottom: 4px;
 }
 .logo h1 {
-  margin: 10px 0 0;
+  margin: 12px 0 0;
   font-size: 2rem;
-  color: var(--accent);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  background: linear-gradient(100deg, #4f46e5, #7c3aed 60%, #db2777);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .logo p {
   margin: 4px 0 0;
 }
 .logo-buzz {
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
   margin: 0 auto;
-  border-radius: 50%;
-  background: radial-gradient(circle at 50% 35%, #ff7676, #c21c1c);
-  box-shadow:
-    0 6px 0 #7a0f0f,
-    0 0 0 8px rgba(255, 200, 61, 0.9);
+  border-radius: 22px;
+  background: url('/favicon.svg') center / contain no-repeat;
+  box-shadow: 0 18px 34px -14px rgba(79, 70, 229, 0.7);
 }
 .input.big {
   font-size: 1.2rem;
@@ -155,26 +158,30 @@ function submit(takeover = false) {
   padding: 0.55em 1em;
   border-radius: 99px;
   border: 2px solid var(--c);
-  background: transparent;
+  background: var(--panel);
   color: var(--text);
   font-weight: 700;
   cursor: pointer;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
 }
 .team.on {
   background: var(--c);
   color: var(--t);
+  box-shadow: 0 8px 18px -10px var(--c);
 }
 .error {
   margin: 0;
-  color: #ff8a8a;
+  color: var(--bad);
   font-weight: 600;
 }
 .notice {
   margin: 0;
   padding: 0.6em 0.8em;
-  border-radius: 10px;
-  background: rgba(245, 158, 11, 0.15);
-  color: #ffd08a;
+  border-radius: 12px;
+  background: var(--warn-soft);
+  color: #92400e;
 }
 .small {
   font-size: 0.85rem;
