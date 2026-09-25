@@ -15,8 +15,8 @@ after(async () => {
 
 const json = (body) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
 
-async function createRoom(owner) {
-  const res = await fetch(`${srv.url}/api/rooms`, json({ ownerToken: owner }))
+async function createRoom() {
+  const res = await fetch(`${srv.url}/api/rooms`, json({}))
   assert.equal(res.status, 200)
   return res.json()
 }
@@ -26,8 +26,7 @@ test('создание комнаты, вход по коду и права ве
   assert.equal(info.mode, 'rooms')
   assert.equal(info.defaultRoom, null)
 
-  assert.equal((await fetch(`${srv.url}/api/rooms`, json({ ownerToken: 'short' }))).status, 400)
-  const { code, hostKey } = await createRoom('owner-token-aaaaaaaaaaaa')
+  const { code, hostKey } = await createRoom()
   assert.match(code, /^\d{6}$/)
 
   const found = await fetch(`${srv.url}/api/rooms/${code.slice(0, 3)}-${code.slice(3)}`)
@@ -35,8 +34,6 @@ test('создание комнаты, вход по коду и права ве
   assert.equal((await found.json()).code, code)
   const missing = code === '999999' ? '999998' : '999999'
   assert.equal((await fetch(`${srv.url}/api/rooms/${missing}`)).status, 404)
-  // Короткий адрес пакетов есть только у основной комнаты режима «одна игра».
-  assert.equal((await fetch(`${srv.url}/api/packs`)).status, 404)
 
   // Неизвестная комната — понятная ошибка вместо обрыва связи.
   const lost = new WsClient(srv.port, 'player', {}, missing)
@@ -96,44 +93,31 @@ test('создание комнаты, вход по коду и права ве
   for (const c of [lost, noCode, intruder, host, screen, anna, late]) c.close()
 })
 
-test('пакеты: у каждого ведущего своя библиотека', async () => {
-  const a1 = await createRoom('owner-token-bbbbbbbbbbbb')
-  const a2 = await createRoom('owner-token-bbbbbbbbbbbb')
-  const b = await createRoom('owner-token-cccccccccccc')
-  const packs = (room) => `${srv.url}/api/rooms/${room.code}/packs`
-  const auth = (room) => ({ headers: { 'x-host-key': room.hostKey } })
-
-  assert.equal((await fetch(packs(a1))).status, 403)
-  assert.equal((await fetch(packs(a1), { headers: { 'x-host-key': b.hostKey } })).status, 403, 'ключ другой комнаты не подходит')
-
-  const created = await fetch(packs(a1), { method: 'POST', headers: { 'content-type': 'application/json', 'x-host-key': a1.hostKey }, body: '{}' })
-  const { id } = await created.json()
-  assert.ok(id)
-  const listA2 = await (await fetch(packs(a2), auth(a2))).json()
-  assert.ok(listA2.some((p) => p.id === id), 'вторая комната того же ведущего видит его пакет')
-  const listB = await (await fetch(packs(b), auth(b))).json()
-  assert.ok(!listB.some((p) => p.id === id), 'чужой ведущий пакет не видит')
-  assert.ok(listB.some((p) => p.id === 'demo-svoya-igra'), 'встроенные пакеты доступны всем')
-
-  // Пакет загружается в игру и медиа отдаются по адресу библиотеки.
+test('комнаты независимы: ключ одной комнаты не подходит к другой', async () => {
+  const a = await createRoom()
+  const b = await createRoom()
+  const c = await createRoom()
+  const del = (room, key) => fetch(`${srv.url}/api/rooms/${room.code}`, { method: 'DELETE', headers: { 'x-host-key': key } })
+  assert.equal((await del(a, b.hostKey)).status, 403, 'ключ другой комнаты не подходит')
   const host = new WsClient(srv.port, 'host', { key: b.hostKey }, b.code)
   await host.open()
-  await host.cmd('pack.load', { packId: 'demo-svoya-igra' })
   await host.cmd('game.start')
-  await host.waitState((s) => s.jeopardy?.stage === 'board')
+  await host.waitState((s) => s.jeopardy?.stage === 'board' || s.jeopardy?.stage === 'assign')
   host.close()
+  assert.equal((await del(c, c.hostKey)).status, 200)
+  assert.equal((await fetch(`${srv.url}/api/rooms/${c.code}`)).status, 404)
+  assert.equal((await fetch(`${srv.url}/api/rooms/${a.code}`)).status, 200)
 })
 
 test('игра по интернету: кнопки открываются у всех одновременно', async () => {
-  const room = await createRoom('owner-token-dddddddddddd')
+  const room = await createRoom()
   const host = new WsClient(srv.port, 'host', { key: room.hostKey }, room.code)
   await host.open()
   const p = new WsClient(srv.port, 'player', {}, room.code)
   await p.open()
   p.send({ t: 'join', name: 'Игрок' })
   await p.wait((m) => m.t === 'joined')
-  await host.cmd('settings.update', { patch: { onlineMode: true } })
-  await host.cmd('pack.load', { packId: 'demo-svoya-igra' })
+  await host.cmd('settings.update', { patch: { onlineMode: true, jFormat: 'tv' } })
   await host.cmd('game.start')
   await host.cmd('j.select', { id: '0:0:0' })
   await p.waitState((s) => s.jeopardy?.question?.step === 'reading')
@@ -155,7 +139,7 @@ test('после перезапуска сервера комната, счёт 
   const first = await startServer(['--rooms'])
   let second = null
   try {
-    const res = await fetch(`${first.url}/api/rooms`, json({ ownerToken: 'owner-token-restart-aaaa' }))
+    const res = await fetch(`${first.url}/api/rooms`, json({}))
     const room = await res.json()
     const host = new WsClient(first.port, 'host', { key: room.hostKey }, room.code)
     await host.open()
@@ -186,7 +170,7 @@ test('после перезапуска сервера комната, счёт 
 
 test('ограничение частоты создания комнат', async () => {
   // Лимит 5 за 10 минут; 5 комнат уже созданы предыдущими тестами этого файла.
-  const res = await fetch(`${srv.url}/api/rooms`, json({ ownerToken: 'owner-token-eeeeeeeeeeee' }))
+  const res = await fetch(`${srv.url}/api/rooms`, json({}))
   assert.equal(res.status, 429)
   assert.match((await res.json()).error, /Слишком много/)
 })

@@ -35,7 +35,7 @@ if (major < 20 || (major === 20 && minor < 19) || (major === 22 && minor < 12)) 
 const version = JSON.parse(fs.readFileSync(path.join(config.root, 'package.json'), 'utf8')).version
 fs.mkdirSync(config.dataDir, { recursive: true })
 
-const manager = new RoomManager({ config, builtinDir: path.join(config.root, 'server', 'demo-packs') })
+const manager = new RoomManager({ config })
 await manager.loadAll()
 if (manager.mode === 'local') await manager.ensureDefaultRoom()
 
@@ -70,7 +70,7 @@ app.use((req, res, next) => {
   res.set('X-Content-Type-Options', 'nosniff')
   res.set('Referrer-Policy', 'no-referrer')
   res.set('X-Frame-Options', 'SAMEORIGIN')
-  if (!config.dev && !req.path.startsWith('/media/')) res.set('Content-Security-Policy', APP_CSP)
+  if (!config.dev) res.set('Content-Security-Policy', APP_CSP)
   next()
 })
 
@@ -124,7 +124,7 @@ if (config.dev) {
   // Все остальные адреса (/, /host, /r/123456, /r/123456/host...) — это одностраничное приложение.
   app.use((req, res, next) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next()
-    if (req.path.startsWith('/api/') || req.path.startsWith('/media/')) return next()
+    if (req.path.startsWith('/api/')) return next()
     res.set('Cache-Control', 'no-cache')
     res.sendFile(path.join(config.distDir, 'index.html'))
   })
@@ -212,8 +212,6 @@ manager.port = port
 const sweepTimer = setInterval(() => {
   const removed = manager.sweep()
   if (removed) console.log(`Удалено неактивных комнат: ${removed}`)
-  const libs = manager.sweepLibraries()
-  if (libs) console.log(`Удалено забытых библиотек пакетов: ${libs}`)
 }, 5 * 60_000)
 sweepTimer.unref()
 
@@ -254,7 +252,7 @@ ${line}
       (или отсканировать QR-код в панели ведущего)
 ${others.length ? `  Другие адреса этого компьютера: ${others.join(', ')}\n` : ''}${info.addresses.length || config.publicUrl ? '' : '  ВНИМАНИЕ: компьютер не подключён к локальной сети — телефоны не смогут подключиться.\n'}
   Ключ ведущего (управление с другого устройства): ${room.hostKey}
-  Данные и пакеты: ${config.dataDir}
+  Сохранения игр: ${config.dataDir}
   Игра через интернет и комнаты по коду: npm start -- --rooms (см. README)
   Остановить сервер: Ctrl+C
 ${line}

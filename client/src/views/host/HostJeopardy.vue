@@ -9,8 +9,8 @@ import HostJFinal from './HostJFinal.vue'
 import HostJSport from './HostJSport.vue'
 import { kindTitle, kindSuffix } from '../../lib/rules'
 import { useHost } from './ctx'
+import { askThemeName } from './themeName'
 
-defineProps<{ hostPlays: boolean }>()
 const { state, run } = useHost()
 const s = computed(() => state.value!)
 const j = computed(() => s.value.jeopardy!)
@@ -34,6 +34,11 @@ async function goRound(index: number) {
 async function select(id: string, played: boolean) {
   if (played && !confirm('Этот вопрос уже сыгран. Открыть его снова?')) return
   await run('j.select', { id, force: played })
+}
+
+function rename(ti: number) {
+  const name = askThemeName(j.value, ti)
+  if (name !== null) void run('j.theme.name', { round: j.value.roundIndex, theme: ti, name })
 }
 </script>
 
@@ -71,11 +76,14 @@ async function select(id: string, played: boolean) {
           <template v-if="s.settings.phoneSelect">Выбирающий может выбрать вопрос и со своего телефона.</template>
         </span>
       </div>
-      <BoardGrid :board="j.board" variant="host" clickable show-types @select="select" />
-      <p class="muted small legend">🐱 — кот в мешке, 💰 — аукцион, 🛡 — вопрос без риска (игроки этих значков не видят)</p>
+      <BoardGrid :board="j.board" variant="host" clickable renamable @select="select" @rename="rename" />
+      <p class="muted small legend">
+        Щёлкните по теме, чтобы вписать её название из своего листа. Кот в мешке, аукцион и вопрос без риска отмечаются
+        после выбора вопроса.
+      </p>
     </template>
 
-    <HostJQuestion v-else-if="j.stage === 'question' && j.question" :host-plays="hostPlays" />
+    <HostJQuestion v-else-if="j.stage === 'question' && j.question" />
 
     <div v-else-if="j.stage === 'roundEnd'" class="card center-card">
       <h2>Раунд «{{ j.rounds[j.roundIndex]?.name }}» окончен</h2>
@@ -85,7 +93,7 @@ async function select(id: string, played: boolean) {
       <button v-else class="btn primary huge" @click="run('j.results')"><Icon name="trophy" /> Итоги игры</button>
     </div>
 
-    <HostJFinal v-else-if="j.stage === 'final' && j.final" :host-plays="hostPlays" />
+    <HostJFinal v-else-if="j.stage === 'final' && j.final" />
 
     <div v-else-if="j.stage === 'results'" class="card center-card">
       <h2>Итоги игры</h2>

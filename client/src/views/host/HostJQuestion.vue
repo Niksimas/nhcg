@@ -1,13 +1,12 @@
 <script setup lang="ts">
-// Открытый вопрос «Своей игры» у ведущего: текст, ответ, управление ходом вопроса.
+// Вопрос «Своей игры» у ведущего. Текст вопроса ведущий читает со своего листа, здесь — ход вопроса:
+// кнопки, кто отвечает, «верно / неверно», спецвопросы (их ведущий отмечает сам).
 import { computed, ref, watch } from 'vue'
-import type { Competitor } from '../../lib/types'
+import type { Competitor, QType } from '../../lib/types'
 import { competitorMap, fmtScore, textOn, TYPE_LABEL } from '../../lib/util'
-import ContentView from '../../components/ContentView.vue'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 
-const props = defineProps<{ hostPlays: boolean }>()
 const { state, run } = useHost()
 const s = computed(() => state.value!)
 const j = computed(() => s.value.jeopardy!)
@@ -17,11 +16,11 @@ const nameOf = (id: string | null | undefined) => (id ? comps.value.get(id)?.nam
 
 const pickId = ref<string | null>(null)
 const price = ref<number>(0)
-const hideAnswer = computed(() => s.value.settings.hideAnswerOnHost)
 
+// Кот в мешке выбравший отдаёт другому игроку.
 const candidates = computed<Competitor[]>(() => {
   const list = s.value.competitors.filter((c) => c.canBuzz)
-  if (q.value.type !== 'cat' || q.value.catSelf) return list
+  if (q.value.type !== 'cat') return list
   const others = list.filter((c) => c.id !== j.value.chooserId)
   return others.length ? others : list
 })
@@ -31,7 +30,7 @@ watch(
   () => {
     const qq = q.value
     if (qq.step !== 'special') return
-    price.value = qq.catPriceOptions?.[0] ?? qq.price
+    price.value = qq.price
     if (qq.type === 'cat') pickId.value = null
     else pickId.value = j.value.chooserId && comps.value.has(j.value.chooserId) ? j.value.chooserId : candidates.value[0]?.id ?? null
   },
@@ -44,6 +43,12 @@ function assign() {
   if (!pickId.value) return
   void run('j.assign', { competitorId: pickId.value, price: price.value })
 }
+
+const SPECIALS: { type: QType; icon: string; title: string }[] = [
+  { type: 'cat', icon: '🐱', title: 'Кот в мешке' },
+  { type: 'auction', icon: '💰', title: 'Аукцион' },
+  { type: 'norisk', icon: '🛡', title: 'Без риска' },
+]
 
 const sport = computed(() => j.value.format === 'sport' || j.value.format === 'khamsa')
 // Спортивный формат: сколько вопросов осталось в теме и кто за столом.
@@ -59,9 +64,6 @@ const table = computed(() =>
         .map((t) => ({ id: t.id, color: t.color, team: t.name, name: j.value.table?.[t.id]?.name ?? '' }))
     : [],
 )
-
-const mediaPlaying = computed(() => (props.hostPlays ? q.value.step === 'reading' || q.value.step === 'buzzing' : null))
-const hasMedia = computed(() => (q.value.content ?? []).some((c) => c.type !== 'text'))
 const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.responderId) : undefined))
 </script>
 
@@ -69,6 +71,7 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   <div class="q">
     <div class="q-head">
       <span class="theme">{{ q.themeName }}</span>
+      <span class="qnum muted">вопрос {{ q.number }}</span>
       <span class="price nums">{{ q.price }}</span>
       <span v-if="q.type !== 'normal'" class="chip type">{{ TYPE_LABEL[q.type] }}</span>
     </div>
@@ -79,30 +82,11 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
       </span>
     </div>
 
-    <div class="q-grid">
-      <div class="card q-card">
-        <div class="label">Вопрос</div>
-        <ContentView :items="q.content" variant="host" :playing="mediaPlaying" />
-        <div v-if="hasMedia" class="row media-ctl">
-          <span class="muted small">Медиа на экране:</span>
-          <button class="btn small" @click="run('media', { action: 'replay' })"><Icon name="refresh" /> Сначала</button>
-          <button class="btn small" @click="run('media', { action: 'pause' })"><Icon name="pause" /></button>
-          <button class="btn small" @click="run('media', { action: 'play' })"><Icon name="play" /></button>
-        </div>
-      </div>
-      <div class="card a-card" :class="{ hidden: hideAnswer }">
-        <div class="label">Ответ {{ hideAnswer ? '(наведите, чтобы увидеть)' : '' }}</div>
-        <div class="answer">{{ q.answer || '—' }}</div>
-        <ContentView v-if="q.answerContent?.length" :items="q.answerContent" variant="host" />
-        <div v-if="q.comment" class="comment">{{ q.comment }}</div>
-      </div>
-    </div>
-
     <!-- Спецвопросы -->
     <div v-if="q.step === 'special'" class="card special">
       <template v-if="q.type === 'cat'">
-        <div class="special-title">🐱 Кот в мешке — тема «{{ q.catTheme }}»</div>
-        <p class="muted">Выбравший вопрос ({{ nameOf(j.chooserId) }}) отдаёт его {{ q.catSelf ? 'любому игроку (можно себе)' : 'другому игроку' }}. Кому?</p>
+        <div class="special-title">🐱 Кот в мешке</div>
+        <p class="muted">Выбравший вопрос ({{ nameOf(j.chooserId) }}) отдаёт его другому игроку. Назовите тему кота и отметьте, кому он достался.</p>
       </template>
       <template v-else-if="q.type === 'auction'">
         <div class="special-title">💰 Аукцион</div>
@@ -128,17 +112,6 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
 
       <div v-if="q.type !== 'norisk'" class="row wrap price-row">
         <span>{{ q.type === 'auction' ? 'Ставка:' : 'Стоимость:' }}</span>
-        <template v-if="q.type === 'cat' && q.catPriceOptions">
-          <button
-            v-for="p in q.catPriceOptions"
-            :key="p"
-            class="btn small"
-            :class="{ primary: price === p }"
-            @click="price = p"
-          >
-            {{ p }}
-          </button>
-        </template>
         <input v-model.number="price" class="input small price-input nums" type="number" min="0" />
         <button
           v-if="q.type === 'auction' && pickedComp && pickedComp.score > q.basePrice"
@@ -157,16 +130,26 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
     <!-- Ход вопроса -->
     <div v-else class="controls">
       <template v-if="q.step === 'reading'">
+        <p class="read-hint">Прочитайте вопрос со своего листа, затем откройте кнопки.</p>
         <button class="btn ok huge" @click="run('j.arm')">
           <Icon name="bolt" /> Принимать ответы <span class="kbd">Пробел</span>
         </button>
-        <button class="btn ghost big" @click="run('j.reveal')">Показать ответ <span class="kbd">Esc</span></button>
-        <p class="muted hint">Прочитайте вопрос вслух, затем откройте кнопки. Раннее нажатие блокирует кнопку игрока на {{ (s.settings.jEarlyLockMs / 1000).toFixed(1) }} с.</p>
+        <button class="btn ghost big" @click="run('j.reveal')">Никто не знает — закрыть вопрос <span class="kbd">Esc</span></button>
+        <div v-if="j.specials && q.type === 'normal'" class="specials">
+          <span class="muted small">Спецвопрос в листе?</span>
+          <button v-for="sp in SPECIALS" :key="sp.type" class="btn small" @click="run('j.special', { type: sp.type })">
+            {{ sp.icon }} {{ sp.title }}
+          </button>
+        </div>
+        <p v-if="s.settings.jEarlyLockMs > 0 && j.format !== 'khamsa'" class="muted hint">
+          Раннее нажатие блокирует кнопку игрока на {{ (s.settings.jEarlyLockMs / 1000).toFixed(1) }} с.
+        </p>
+        <p v-else-if="j.format === 'khamsa'" class="muted hint">Нажатие до того, как вы откроете кнопки, — фальстарт.</p>
       </template>
 
       <template v-else-if="q.step === 'buzzing'">
         <div class="waiting"><span class="pulse-dot" /> Кнопки открыты — ждём нажатия…</div>
-        <button class="btn big" @click="run('j.reveal')">Никто не знает — показать ответ <span class="kbd">Esc</span></button>
+        <button class="btn big" @click="run('j.reveal')">Никто не знает — закрыть вопрос <span class="kbd">Esc</span></button>
       </template>
 
       <template v-else-if="q.step === 'answering' && responder">
@@ -189,7 +172,7 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
       </template>
 
       <template v-else-if="q.step === 'reveal'">
-        <div class="revealed">Ответ показан на экране</div>
+        <div class="revealed">Вопрос сыгран</div>
         <template v-if="sport">
           <button class="btn primary huge" @click="run('j.next')">
             <Icon name="next" /> {{ themeLeft ? 'Следующий вопрос' : 'Тема сыграна — к темам раунда' }} <span class="kbd">Enter</span>
@@ -204,6 +187,7 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
           {{ a.correct ? '✓' : '✗' }} {{ nameOf(a.competitorId) }} {{ a.delta > 0 ? '+' : '' }}{{ a.delta || '' }}
         </span>
       </div>
+      <p class="muted hint manual">Счёт можно поправить вручную: кнопки ± у игрока слева или щелчок по его счёту.</p>
     </div>
   </div>
 </template>
@@ -253,47 +237,23 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
   background: #ede9fe;
   color: #5b21b6;
 }
-.q-grid {
-  display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 12px;
+.qnum {
+  font-size: 0.95rem;
+  font-weight: 600;
 }
-.q-card,
-.a-card {
+.read-hint {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+.specials {
   display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.a-card {
-  border-color: #f6d58f;
-  background: linear-gradient(180deg, var(--gold-soft), var(--panel) 70%);
-}
-.answer {
-  font-size: 1.5rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  color: #b45309;
-}
-.a-card.hidden .answer,
-.a-card.hidden .comment,
-.a-card.hidden :deep(.content) {
-  filter: blur(9px);
-  transition: filter 0.2s;
-}
-.a-card.hidden:hover .answer,
-.a-card.hidden:hover .comment,
-.a-card.hidden:hover :deep(.content) {
-  filter: none;
-}
-.comment {
-  font-size: 0.92rem;
-  color: var(--muted);
-  white-space: pre-wrap;
-  border-top: 1px solid var(--line);
-  padding-top: 8px;
-}
-.media-ctl {
+  align-items: center;
+  gap: 6px;
   flex-wrap: wrap;
+}
+.manual {
+  margin-top: 4px;
 }
 .small {
   font-size: 0.85rem;
@@ -395,10 +355,5 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
 .chip.bad {
   background: var(--bad-soft);
   color: var(--bad-2);
-}
-@media (max-width: 900px) {
-  .q-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

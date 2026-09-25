@@ -19,8 +19,6 @@ const started = ref(false)
 const showQr = ref(false)
 const flash = reactive<Record<string, number>>({})
 const overlay = ref<{ text: string; sub?: string; color: string; kind: string } | null>(null)
-const replayKey = ref(0)
-const mediaPaused = ref(false)
 const cursorHidden = ref(false)
 let overlayTimer = 0
 let cursorTimer = 0
@@ -125,14 +123,6 @@ useConnMessage(conn, 'event', (msg) => {
   if (name === 'soundTest' && !sound.unlocked.value) {
     showOverlay({ text: 'Щёлкните здесь', sub: 'чтобы браузер разрешил звук', color: '#4f46e5', kind: 'hint' }, 3000)
   }
-  if (name === 'media') {
-    if (data.action === 'replay') {
-      mediaPaused.value = false
-      replayKey.value++
-    } else if (data.action === 'pause') mediaPaused.value = true
-    else if (data.action === 'play') mediaPaused.value = false
-  }
-  if (name === 'questionSelected' || name === 'brQuestion' || name === 'finalQuestion') mediaPaused.value = false
 })
 
 // Звуковые предупреждения таймера «Брейн-ринга»: за 10 секунд и последние 5 секунд.
@@ -177,8 +167,6 @@ const mode = computed(() => state.value?.mode)
         :j="state.jeopardy"
         :now="now"
         :flash="flash"
-        :replay-key="replayKey"
-        :media-paused="mediaPaused"
       />
       <ScreenBrainRing
         v-else-if="mode === 'brainring' && state.brainring"
@@ -186,8 +174,6 @@ const mode = computed(() => state.value?.mode)
         :br="state.brainring"
         :now="now"
         :flash="flash"
-        :replay-key="replayKey"
-        :media-paused="mediaPaused"
       />
       <div v-else class="wait center"><p>Ведущий готовит игру…</p></div>
 

@@ -16,7 +16,6 @@ import HostJeopardy from './host/HostJeopardy.vue'
 import HostBrainRing from './host/HostBrainRing.vue'
 import HostBuzzPanel from './host/HostBuzzPanel.vue'
 import HostSettings from './host/HostSettings.vue'
-import HostPacks from './host/HostPacks.vue'
 import HostJoin from './host/HostJoin.vue'
 import { provideHost } from './host/ctx'
 
@@ -29,7 +28,7 @@ const status = conn.status
 
 type SoundMode = 'auto' | 'on' | 'off'
 const soundMode = ref<SoundMode>((storage.get('quiz.hostSoundMode') as SoundMode) || 'auto')
-const modal = ref<'settings' | 'packs' | 'join' | null>(null)
+const modal = ref<'settings' | 'join' | null>(null)
 const keyInput = ref('')
 const toasts = ref<{ id: number; text: string; kind: 'ok' | 'err' }[]>([])
 const flash = reactive<Record<string, number>>({})
@@ -59,8 +58,8 @@ provideHost({
   run,
   toast,
   flash,
-  openPacks: () => (modal.value = 'packs'),
   openJoin: () => (modal.value = 'join'),
+  openSettings: () => (modal.value = 'settings'),
 })
 
 // Звук играет на панели ведущего, если выбран режим «вкл» или если не подключён ни один экран.
@@ -166,10 +165,9 @@ function hotkeyAction(e: KeyboardEvent): { name: string; args?: Record<string, u
     if (key === 'space' && br.stage === 'reading') return { name: 'br.start' }
     if (key === 'enter' && br.stage === 'answering') return { name: 'br.judge', args: { correct: true } }
     if (key === 'wrong' && br.stage === 'answering') return { name: 'br.judge', args: { correct: false } }
-    const atEnd = br.total != null && br.qIndex >= br.total - 1
     // Enter — следующий вопрос боя (новый бой ведущий начинает кнопкой, выбрав команды).
     const inBattle = !!br.battle && !br.battle.tie
-    if ((key === 'enter' || key === 'right') && (br.stage === 'reveal' || br.stage === 'idle') && inBattle && !atEnd) return { name: 'br.next' }
+    if ((key === 'enter' || key === 'right') && (br.stage === 'reveal' || br.stage === 'idle') && inBattle) return { name: 'br.next' }
   }
   return null
 }
@@ -254,10 +252,6 @@ function fmtTime(ts: number) {
             <button class="mode-btn" :class="{ on: mode === 'khamsa' }" @click="switchMode('khamsa')">Хамса</button>
           </div>
         </div>
-        <button class="pack-btn" title="Пакеты вопросов" @click="modal = 'packs'">
-          <Icon name="folder" />
-          <span class="ellipsis">{{ state.pack?.title ?? 'Пакет не выбран' }}</span>
-        </button>
         <div class="grow" />
         <button class="btn small" :disabled="!state.undo" :title="state.undo ? `Отменить: ${state.undo} (Ctrl+Z)` : 'Нечего отменять'" @click="run('undo')">
           <Icon name="undo" /> Отменить
@@ -293,12 +287,8 @@ function fmtTime(ts: number) {
 
         <main class="main scroll">
           <HostLobby v-if="state.stage === 'lobby'" />
-          <HostJeopardy v-else-if="(mode === 'jeopardy' || mode === 'khamsa') && state.jeopardy" :host-plays="hostPlays" />
-          <HostBrainRing v-else-if="mode === 'brainring' && state.brainring" :host-plays="hostPlays" />
-          <div v-else class="card muted">
-            Для «Своей игры» нужен пакет вопросов.
-            <button class="btn small" @click="modal = 'packs'">Выбрать пакет</button>
-          </div>
+          <HostJeopardy v-else-if="(mode === 'jeopardy' || mode === 'khamsa') && state.jeopardy" />
+          <HostBrainRing v-else-if="mode === 'brainring' && state.brainring" />
         </main>
 
         <aside class="right scroll">
@@ -309,7 +299,7 @@ function fmtTime(ts: number) {
               <div><span class="kbd">Пробел</span> принимать ответы</div>
               <div><span class="kbd">Enter</span> верно / далее</div>
               <div><span class="kbd">Backspace</span> неверно</div>
-              <div><span class="kbd">Esc</span> показать ответ</div>
+              <div><span class="kbd">Esc</span> никто не знает — закрыть вопрос</div>
             </template>
             <template v-else>
               <div><span class="kbd">Пробел</span> «Время!»</div>
@@ -325,9 +315,6 @@ function fmtTime(ts: number) {
 
     <Modal v-if="modal === 'settings' && state" title="Настройки" width="820px" @close="modal = null">
       <HostSettings />
-    </Modal>
-    <Modal v-if="modal === 'packs' && state" title="Пакеты вопросов" width="860px" @close="modal = null">
-      <HostPacks @close="modal = null" />
     </Modal>
     <Modal v-if="modal === 'join' && state" title="Подключение игроков" width="620px" @close="modal = null">
       <HostJoin />
@@ -433,23 +420,6 @@ function fmtTime(ts: number) {
   background: var(--panel);
   color: var(--accent);
   box-shadow: var(--shadow-sm);
-}
-.pack-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 280px;
-  background: transparent;
-  border: 1px dashed var(--line-2);
-  color: var(--text);
-  font-weight: 600;
-  padding: 0.35em 0.7em;
-  border-radius: 10px;
-  cursor: pointer;
-}
-.pack-btn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
 }
 .auto-tag {
   font-size: 0.6rem;

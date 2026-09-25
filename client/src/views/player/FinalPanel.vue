@@ -1,8 +1,7 @@
 <script setup lang="ts">
-// Финал «Своей игры» на телефоне: ставка и письменный ответ.
+// Финал «Своей игры» (и раунд «Хамса») на телефоне: ставка и письменный ответ. Вопрос читает ведущий.
 import { computed, ref, watch } from 'vue'
 import type { JFinal, MeView, TimerState } from '../../lib/types'
-import ContentView from '../../components/ContentView.vue'
 import TimerBar from '../../components/TimerBar.vue'
 
 const props = defineProps<{
@@ -10,7 +9,6 @@ const props = defineProps<{
   me: NonNullable<NonNullable<MeView['jeopardy']>['final']>
   timer: TimerState | undefined
   now: number
-  showQuestion: boolean
   title?: string
 }>()
 const emit = defineEmits<{ bet: [amount: number]; answer: [text: string] }>()
@@ -113,7 +111,7 @@ const dirty = computed(() => answer.value.trim() !== (answerSent.value ?? '').tr
 
     <template v-else-if="final.step === 'question'">
       <TimerBar :timer="timer" :now="now" :warn-at="10000" />
-      <ContentView v-if="showQuestion && final.content" :items="final.content" variant="phone" />
+      <p class="muted t-center small">Ведущий читает вопрос — напишите ответ, пока идёт время.</p>
       <textarea
         v-model="answer"
         class="textarea answer"
@@ -135,7 +133,6 @@ const dirty = computed(() => answer.value.trim() !== (answerSent.value ?? '').tr
       <p v-if="me.result === true" class="result ok">Верно! +{{ me.bet }}</p>
       <p v-else-if="me.result === false" class="result bad">Неверно, −{{ me.bet ?? 0 }}</p>
       <p v-else class="muted t-center">Ведущий проверяет ответы…</p>
-      <p v-if="final.answer" class="t-center">Правильный ответ: <b>{{ final.answer }}</b></p>
     </template>
   </div>
 </template>

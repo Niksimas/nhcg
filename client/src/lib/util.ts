@@ -1,6 +1,6 @@
 import { onUnmounted, ref, type Ref } from 'vue'
 import type { GameConnection } from './connection'
-import type { Competitor, ContentItem, GameState, TimerState } from './types'
+import type { Competitor, GameState, TimerState } from './types'
 
 // Чёрный или белый текст поверх цвета фона.
 export function textOn(bg: string): string {
@@ -28,13 +28,6 @@ export function plural(n: number, one: string, few: string, many: string): strin
 
 export function fmtScore(n: number): string {
   return n.toLocaleString('ru-RU')
-}
-
-export function contentText(items: ContentItem[] | null | undefined): string {
-  return (items ?? [])
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text)
-    .join(' ')
 }
 
 // Сколько осталось. Если таймер назначен на будущее (синхронный старт по интернету) — показываем полное время.

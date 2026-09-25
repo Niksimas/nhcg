@@ -1,7 +1,9 @@
 <script setup lang="ts">
 // Табло «Своей игры»: темы слева, цены справа. Сыгранные вопросы пустеют.
+// У ведущего название темы можно вписать щелчком (renamable).
 import { computed } from 'vue'
 import type { JBoardTheme } from '../lib/types'
+import Icon from './Icon.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -9,14 +11,13 @@ const props = withDefaults(
     variant?: 'screen' | 'host' | 'phone'
     clickable?: boolean
     selectedId?: string | null
-    showTypes?: boolean
+    renamable?: boolean
   }>(),
-  { variant: 'screen', clickable: false, selectedId: null, showTypes: false },
+  { variant: 'screen', clickable: false, selectedId: null, renamable: false },
 )
-const emit = defineEmits<{ select: [id: string, played: boolean] }>()
+const emit = defineEmits<{ select: [id: string, played: boolean]; rename: [themeIndex: number] }>()
 
 const cols = computed(() => Math.max(1, ...props.board.map((t) => t.questions.length)))
-const MARK: Record<string, string> = { cat: '🐱', auction: '💰', norisk: '🛡' }
 
 function click(id: string, played: boolean) {
   if (!props.clickable) return
@@ -28,11 +29,18 @@ function click(id: string, played: boolean) {
 <template>
   <div class="board" :class="variant" :style="{ '--cols': cols }">
     <template v-for="(theme, ti) in board" :key="ti">
-      <div class="theme" :class="{ hidden: theme.hidden, current: theme.current, struck: theme.struck }">
+      <component
+        :is="renamable ? 'button' : 'div'"
+        class="theme"
+        :class="{ hidden: theme.hidden, current: theme.current, struck: theme.struck, renamable, unnamed: renamable && !theme.named }"
+        :title="renamable ? 'Вписать название темы' : undefined"
+        @click="renamable && emit('rename', ti)"
+      >
         <span v-if="theme.name">{{ theme.name }}</span>
         <span v-else class="secret">Тема {{ ti + 1 }}</span>
         <span v-if="theme.hidden && theme.name && variant === 'host'" class="secret-tag" title="Игроки ещё не видят название">скрыта</span>
-      </div>
+        <Icon v-if="renamable" class="pen" name="edit" size="0.85em" />
+      </component>
       <button
         v-for="q in theme.questions"
         :key="q.id"
@@ -48,7 +56,6 @@ function click(id: string, played: boolean) {
         @click="click(q.id, q.played)"
       >
         <span class="price">{{ q.played && variant !== 'host' ? '' : q.price }}</span>
-        <span v-if="showTypes && q.type && MARK[q.type]" class="mark">{{ MARK[q.type] }}</span>
       </button>
       <div v-for="n in cols - theme.questions.length" :key="`e${n}`" class="cell empty" />
     </template>
@@ -138,11 +145,25 @@ function click(id: string, played: boolean) {
   background: transparent;
   border-color: transparent;
 }
-.mark {
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  font-size: 0.7em;
+button.theme {
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.theme.renamable:hover {
+  border-color: var(--accent);
+}
+.theme.unnamed > span:first-child {
+  color: var(--faint);
+}
+.pen {
+  margin-left: auto;
+  flex: none;
+  opacity: 0.45;
+}
+.theme.renamable:hover .pen {
+  opacity: 1;
+  color: var(--accent);
 }
 
 .screen {

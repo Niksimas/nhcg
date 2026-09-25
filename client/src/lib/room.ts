@@ -1,6 +1,6 @@
 // Текущая комната: код из адреса (/r/123456/...) или основная комната сервера в режиме «одна игра».
 import { reactive } from 'vue'
-import { randomToken, storage } from './util'
+import { storage } from './util'
 
 export type ServerMode = 'local' | 'rooms'
 
@@ -60,16 +60,6 @@ export function normalizeCode(input: string): string {
 export function formatCode(code: string | null | undefined): string {
   const c = code ?? ''
   return c.length === 6 ? `${c.slice(0, 3)} ${c.slice(3)}` : c
-}
-
-// Секрет этого браузера, по которому сервер узнаёт библиотеку пакетов ведущего.
-export function ownerToken(): string {
-  let token = storage.get('quiz.owner')
-  if (!token || token.length < 16) {
-    token = randomToken() + randomToken()
-    storage.set('quiz.owner', token)
-  }
-  return token
 }
 
 // Комнаты, созданные в этом браузере (для быстрого возврата в панель ведущего).

@@ -1,5 +1,4 @@
 import { Game } from '../game/game.js'
-import { normalizePack } from '../packs/normalize.js'
 
 // Управляемые «часы» и таймеры для детерминированных тестов.
 export class FakeTime {
@@ -32,55 +31,14 @@ export class FakeTime {
   }
 }
 
-export const TEST_PACK = normalizePack(
-  {
-    title: 'Тестовый пакет',
-    author: 'Тест',
-    rounds: [
-      {
-        name: 'Раунд 1',
-        themes: [
-          {
-            name: 'Тема А',
-            questions: [
-              { price: 100, question: 'Вопрос А100', answer: 'Ответ А100' },
-              { price: 200, question: 'Вопрос А200', answer: 'Ответ А200', type: 'cat', catTheme: 'Коты', catPrice: 500 },
-            ],
-          },
-          {
-            name: 'Тема Б',
-            questions: [
-              { price: 100, question: 'Вопрос Б100', answer: 'Ответ Б100', type: 'auction' },
-              { price: 200, question: 'Вопрос Б200', answer: 'Ответ Б200', type: 'norisk' },
-            ],
-          },
-        ],
-      },
-      {
-        name: 'Финал',
-        type: 'final',
-        themes: [
-          { name: 'Финал 1', questions: [{ price: 0, question: 'Финальный вопрос 1', answer: 'Ф1' }] },
-          { name: 'Финал 2', questions: [{ price: 0, question: 'Финальный вопрос 2', answer: 'Ф2' }] },
-        ],
-      },
-    ],
-  },
-  { id: 'test-pack' },
-)
-
-export function makeGame({ pack = TEST_PACK } = {}) {
+// Игра с управляемым временем. settings — настройки поверх стандартных (например, скелет «Своей игры»).
+export function makeGame({ settings = null } = {}) {
   const time = new FakeTime()
   const game = new Game({
     clock: time.now,
     timers: { setTimeout: time.setTimeout, clearTimeout: time.clearTimeout },
-    packStore: {
-      async loadForGame(id) {
-        if (pack && id === pack.id) return pack
-        throw new Error('not found')
-      },
-    },
   })
+  if (settings) game.hostCommand('settings.update', { patch: settings })
   const events = []
   game.on('event', (e) => events.push(e))
   return { game, time, events }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
+// Экран для зрителей: «Брейн-ринг». Вопрос ведущий читает вслух — на экране время, кто отвечает и счёт.
 import { computed } from 'vue'
 import type { BrainRingView, GameState } from '../../lib/types'
 import { competitorMap, fmtScore, textOn, timerLeft } from '../../lib/util'
-import ContentView from '../../components/ContentView.vue'
 import BrStandings from '../../components/BrStandings.vue'
 
 const props = defineProps<{
@@ -10,8 +10,6 @@ const props = defineProps<{
   br: BrainRingView
   now: number
   flash: Record<string, number>
-  replayKey: number
-  mediaPaused: boolean
 }>()
 
 const comps = computed(() => competitorMap(props.state))
@@ -57,8 +55,6 @@ const status = computed(() => {
   }
 })
 const lastValue = computed(() => props.br.history[props.br.history.length - 1]?.value ?? props.br.value)
-const revealed = computed(() => props.br.stage === 'reveal' || props.br.stage === 'battleEnd')
-const showContent = computed(() => props.br.question?.content && (props.br.showQuestion || revealed.value))
 // Во время боя на экране — только его команды со счётом боя; между боями — турнирная таблица.
 const battle = computed(() => props.br.battle)
 const shownTeams = computed(() => {
@@ -77,7 +73,6 @@ const battleInfo = computed(() => {
   if (!bt.limit) return `Бой №${bt.no} · вопрос ${n}`
   return n > props.state.settings.brBattleQuestions ? `Бой №${bt.no} · дополнительный вопрос` : `Бой №${bt.no} · вопрос ${n} из ${bt.limit}`
 })
-const mediaPlaying = computed(() => !props.mediaPaused && (props.br.stage === 'reading' || props.br.stage === 'armed'))
 const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
 </script>
 
@@ -139,26 +134,6 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
       <div class="status" :class="status.cls">{{ status.text }}</div>
     </div>
 
-    <div v-if="!showTable && (showContent || (revealed && br.question?.answer))" class="question" :class="{ reveal: revealed }">
-      <ContentView
-        v-if="showContent"
-        :items="br.question?.content"
-        variant="screen"
-        :compact="revealed"
-        :playing="mediaPlaying"
-        :replay-key="replayKey"
-      />
-      <div v-if="revealed && br.question?.answer" class="answer">
-        Ответ: <b>{{ br.question.answer }}</b>
-      </div>
-      <ContentView
-        v-if="revealed && br.question?.answerContent?.length"
-        :items="br.question.answerContent"
-        variant="screen"
-        compact
-        :playing="true"
-      />
-    </div>
   </div>
 </template>
 
@@ -349,29 +324,6 @@ const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
   color: var(--muted);
 }
 .status.finished {
-  color: var(--accent);
-}
-.question {
-  flex: 0 1 auto;
-  max-height: 48vh;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2vh;
-  padding: 2vh 3vw;
-  border-radius: 26px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-}
-.answer {
-  font-size: clamp(1.5rem, min(3.4vw, 6vh), 3.4rem);
-  text-align: center;
-}
-.answer b {
   color: var(--accent);
 }
 </style>

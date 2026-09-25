@@ -2,32 +2,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { makeGame } from './helpers.js'
-import { normalizePack } from '../packs/normalize.js'
-
-function khamsaPack({ themes = 5 } = {}) {
-  const theme = (r, t) => ({
-    name: `Тема ${r}.${t}`,
-    questions: [1, 2, 3, 4, 5].map((n) => ({ price: n * 100 * r, question: `Вопрос ${r}.${t}.${n}`, answer: `Ответ ${r}.${t}.${n}` })),
-  })
-  const round = (r, name) => ({ name, themes: Array.from({ length: themes }, (_, i) => theme(r, i + 1)) })
-  return normalizePack(
-    {
-      title: 'Хамса для тестов',
-      rounds: [
-        round(1, 'Явный'),
-        round(2, 'Полуявный'),
-        round(3, 'Тайный'),
-        round(4, 'Четвёртый'),
-        { name: 'Хамса', type: 'final', themes: [{ name: 'Хамса', questions: [{ price: 0, question: 'Главный вопрос', answer: 'Ответ' }] }] },
-      ],
-    },
-    { id: 'test-pack' },
-  )
-}
 
 // Четыре команды по два игрока (капитан — первый).
 function teamsSetup(teamCount = 4) {
-  const ctx = makeGame({ pack: khamsaPack() })
+  const ctx = makeGame()
   const { game } = ctx
   game.hostCommand('settings.update', { patch: { teamMode: true } })
   const teams = []
@@ -47,14 +25,13 @@ function teamsSetup(teamCount = 4) {
 }
 
 async function start(ctx) {
-  await ctx.game.hostCommand('pack.load', { packId: 'test-pack' })
   ctx.game.hostCommand('game.start')
 }
 
 const kh = (game) => game.state.khamsa
 
 test('«Хамса»: раунды явный, полуявный, тайный, четвёртый и «Хамса», стоимость растёт от раунда к раунду', async () => {
-  const ctx = makeGame({ pack: khamsaPack() })
+  const ctx = makeGame()
   const { game } = ctx
   game.hostCommand('mode.set', { mode: 'khamsa' })
   await start(ctx)
@@ -64,6 +41,11 @@ test('«Хамса»: раунды явный, полуявный, тайный,
     view().rounds.map((r) => r.kind),
     ['open', 'semi', 'closed', 'leaders', 'khamsa'],
   )
+  assert.deepEqual(
+    view().rounds.map((r) => r.name),
+    ['Явный раунд', 'Полуявный раунд', 'Тайный раунд', 'Четвёртый раунд', 'Хамса'],
+  )
+  assert.equal(view().board.length, 5, 'в раунде пять тем')
   assert.deepEqual(
     view().board[0].questions.map((q) => q.price),
     [100, 200, 300, 400, 500],
@@ -227,7 +209,7 @@ test('«Хамса»: вычёркивание тем переживает пе�
   const first = kh(game).strike.order[0]
   const cap = teams.find((t) => t.team.id === first).members[0]
   game.playerAction(cap.id, 'strike', { index: 2 })
-  const { game: g2 } = makeGame({ pack: khamsaPack() })
+  const { game: g2 } = makeGame()
   await g2.restore(JSON.parse(JSON.stringify(game.serialize())))
   assert.equal(g2.state.mode, 'khamsa')
   assert.equal(g2.state.khamsa.stage, 'strike')

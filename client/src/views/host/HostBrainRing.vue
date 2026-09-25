@@ -1,15 +1,12 @@
 <script setup lang="ts">
-// «Брейн-ринг» у ведущего: вопрос, кнопка «Время!», таймер, приём ответов, счёт боя.
+// «Брейн-ринг» у ведущего: кнопка «Время!», таймер, приём ответов, счёт боя. Вопросы — с листа ведущего.
 import { computed, ref, watch } from 'vue'
 import { competitorMap, textOn, timerLeft } from '../../lib/util'
-import ContentView from '../../components/ContentView.vue'
 import BrStandings from '../../components/BrStandings.vue'
 import TimerBar from '../../components/TimerBar.vue'
-import Modal from '../../components/Modal.vue'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 
-const props = defineProps<{ hostPlays: boolean }>()
 const { state, run, now } = useHost()
 const s = computed(() => state.value!)
 const br = computed(() => s.value.brainring!)
@@ -17,11 +14,7 @@ const comps = computed(() => competitorMap(s.value))
 const nameOf = (id: string | null | undefined) => (id ? comps.value.get(id)?.name ?? '—' : '—')
 const b = computed(() => s.value.buzzer)
 const responder = computed(() => (br.value.stage === 'answering' && b.value.winner ? comps.value.get(b.value.winner.competitorId) : undefined))
-const hasPack = computed(() => br.value.total != null)
-const atEnd = computed(() => br.value.total != null && br.value.qIndex >= br.value.total - 1)
-const listOpen = ref(false)
 const mainLeft = computed(() => timerLeft(s.value.timers.main, now.value))
-const hideAnswer = computed(() => s.value.settings.hideAnswerOnHost)
 
 const falseStarters = computed(() => b.value.falseStarts.map((id) => nameOf(id)))
 const history = computed(() => [...br.value.history].reverse().slice(0, 12))
@@ -29,10 +22,6 @@ const RESULT: Record<string, string> = { correct: 'взят', burned: 'не вз
 
 async function next() {
   await run('br.next')
-}
-async function goto(i: number) {
-  listOpen.value = false
-  await run('br.goto', { index: i })
 }
 async function setValue() {
   const v = prompt('Сколько очков стоит этот вопрос?', String(br.value.value))
@@ -75,7 +64,6 @@ const battleLabel = computed(() => {
   return `Бой №${bt.no} · вопрос ${q}${bt.limit ? ` из ${bt.limit}` : ''}${extra}`
 })
 const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' || br.value.stage === 'battleEnd'))
-const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'reading' || br.value.stage === 'armed' : null))
 </script>
 
 <template>
@@ -85,7 +73,6 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
         <template v-if="battle">{{ battleLabel }}</template>
         <template v-else-if="br.stage === 'battleEnd' && last">Бой №{{ last.no }} окончен</template>
         <template v-else>Бой не начат</template>
-        <span v-if="br.qIndex >= 0 && br.total" class="muted small"> · в пакете №{{ br.qIndex + 1 }} из {{ br.total }}</span>
       </div>
       <button v-if="battle && ['reading', 'armed', 'answering'].includes(br.stage)" class="chip value" title="Изменить стоимость" @click="setValue">
         Стоимость: <b>{{ br.value }}</b>
@@ -94,7 +81,6 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
         Перенос: +{{ br.carry }} к следующему вопросу
       </span>
       <div class="grow" />
-      <button v-if="hasPack" class="btn small" @click="listOpen = true"><Icon name="list" /> Все вопросы</button>
       <button v-if="battle" class="btn small ghost" @click="endBattle"><Icon name="flag" /> Завершить бой</button>
       <button v-else-if="br.stage !== 'finished'" class="btn small ghost" @click="finish"><Icon name="trophy" /> Итоги турнира</button>
     </div>
@@ -156,31 +142,10 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
       </p>
     </div>
 
-    <div v-if="br.question" class="q-grid">
-      <div class="card">
-        <div class="label">
-          Вопрос <span v-if="br.question.themeName" class="faint">· {{ br.question.themeName }}</span>
-        </div>
-        <ContentView :items="br.question.content" variant="host" :playing="mediaPlaying" />
-        <label class="check show-q">
-          <input type="checkbox" :checked="br.showQuestion" @change="run('br.show', { show: !br.showQuestion })" />
-          Показывать текст вопроса на экране и телефонах
-        </label>
-      </div>
-      <div class="card a-card" :class="{ hidden: hideAnswer }">
-        <div class="label">Ответ</div>
-        <div class="answer">{{ br.question.answer || '—' }}</div>
-        <ContentView v-if="br.question.answerContent?.length" :items="br.question.answerContent" variant="host" />
-        <div v-if="br.question.comment" class="comment">{{ br.question.comment }}</div>
-      </div>
-    </div>
-    <div v-else-if="br.stage !== 'idle' && br.stage !== 'finished' && !hasPack" class="card muted">
-      Пакет не выбран — читайте вопрос с листа. Программа следит за кнопками, фальстартами и временем.
-    </div>
 
     <div class="control card">
       <template v-if="br.stage === 'idle' && battle">
-        <button class="btn primary huge" :disabled="atEnd && br.qIndex >= 0" @click="next">
+        <button class="btn primary huge" @click="next">
           <Icon name="play" /> Первый вопрос боя <span class="kbd">Enter</span>
         </button>
       </template>
@@ -189,7 +154,7 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
       </template>
 
       <template v-else-if="br.stage === 'reading'">
-        <div class="hint">Прочитайте вопрос. Нажатие кнопки до сигнала — фальстарт.</div>
+        <div class="hint">Прочитайте вопрос №{{ br.qIndex + 1 }} со своего листа. Нажатие кнопки до сигнала — фальстарт.</div>
         <button class="btn ok huge time-btn" @click="run('br.start')">
           ВРЕМЯ! <span class="kbd">Пробел</span>
         </button>
@@ -228,10 +193,9 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
         <div class="result" :class="br.answeredBy ? 'ok' : 'burned'">
           {{ br.answeredBy ? `Верно ответили: ${nameOf(br.answeredBy)}` : 'Вопрос не взят' }}
         </div>
-        <button v-if="!battle?.tie" class="btn primary huge" :disabled="atEnd" @click="next">
+        <button v-if="!battle?.tie" class="btn primary huge" @click="next">
           <Icon name="next" /> Следующий вопрос <span class="kbd">Enter</span>
         </button>
-        <p v-if="atEnd" class="muted">Вопросы в пакете закончились.</p>
       </template>
 
       <template v-else-if="br.stage === 'finished'">
@@ -277,21 +241,6 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
       </div>
     </div>
 
-    <Modal v-if="listOpen && br.list" title="Вопросы пакета" width="760px" @close="listOpen = false">
-      <div class="qlist">
-        <button
-          v-for="(item, i) in br.list"
-          :key="i"
-          class="qitem"
-          :class="{ cur: i === br.qIndex, done: br.history.some((h) => h.index === i) }"
-          @click="goto(i)"
-        >
-          <span class="nums faint">{{ i + 1 }}.</span>
-          <span class="grow">{{ item.preview || '(без текста)' }}</span>
-          <span class="faint small">{{ item.themeName }}</span>
-        </button>
-      </div>
-    </Modal>
   </div>
 </template>
 
@@ -384,41 +333,6 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   background: var(--warn-soft);
   color: #92400e;
 }
-.q-grid {
-  display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 12px;
-}
-.q-grid .card {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.a-card {
-  border-color: #f6d58f;
-  background: linear-gradient(180deg, var(--gold-soft), var(--panel) 70%);
-}
-.answer {
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: #b45309;
-}
-.a-card.hidden .answer,
-.a-card.hidden .comment {
-  filter: blur(9px);
-}
-.a-card.hidden:hover .answer,
-.a-card.hidden:hover .comment {
-  filter: none;
-}
-.comment {
-  color: var(--muted);
-  font-size: 0.9rem;
-  white-space: pre-wrap;
-}
-.show-q {
-  font-size: 0.9rem;
-}
 .control {
   display: flex;
   flex-direction: column;
@@ -498,37 +412,5 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
 }
 .small {
   font-size: 0.85rem;
-}
-.qlist {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.qitem {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid var(--line);
-  background: var(--panel-2);
-  color: var(--text);
-  cursor: pointer;
-}
-.qitem:hover {
-  border-color: var(--line-2);
-}
-.qitem.cur {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.qitem.done {
-  opacity: 0.55;
-}
-@media (max-width: 900px) {
-  .q-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

@@ -1,13 +1,11 @@
 <script setup lang="ts">
-// Финал «Своей игры» у ведущего: темы, ставки, вопрос, проверка ответов.
+// Финал «Своей игры» (и раунд «Хамса») у ведущего: ставки, вопрос с листа, ответы с телефонов, проверка.
 import { computed, reactive } from 'vue'
 import { competitorMap, fmtScore, textOn } from '../../lib/util'
-import ContentView from '../../components/ContentView.vue'
 import TimerBar from '../../components/TimerBar.vue'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 
-const props = defineProps<{ hostPlays: boolean }>()
 const { state, run, now } = useHost()
 const s = computed(() => state.value!)
 const f = computed(() => s.value.jeopardy!.final!)
@@ -33,8 +31,15 @@ function setBet(id: string) {
 }
 
 async function showQuestion() {
-  if (!allBets.value && !confirm('Не все сделали ставки (без ставки — 0). Показать вопрос?')) return
+  if (!allBets.value && !confirm('Не все сделали ставки (без ставки — 0). Начать приём ответов?')) return
   await run('j.final.question')
+}
+
+function renameTheme() {
+  const j = s.value.jeopardy!
+  const ti = f.value.themes.find((t) => !t.removed)?.index ?? 0
+  const name = prompt('Тема вопроса (пусто — без названия)', f.value.themeName ?? '')
+  if (name !== null) void run('j.theme.name', { round: j.roundIndex, theme: ti, name })
 }
 
 async function closeAnswers() {
@@ -48,6 +53,7 @@ async function closeAnswers() {
     <div class="head">
       <h2>{{ title }}</h2>
       <span v-if="f.themeName" class="theme">Тема: {{ f.themeName }}</span>
+      <button class="btn small ghost" title="Вписать тему вопроса из своего листа" @click="renameTheme"><Icon name="edit" /> Тема</button>
     </div>
 
     <!-- Темы -->
@@ -97,23 +103,14 @@ async function closeAnswers() {
       <p v-if="f.step === 'bets'" class="muted small">Игроки делают ставки на телефонах. Ставку можно ввести и вручную.</p>
     </div>
 
-    <div v-if="f.step !== 'themes'" class="q-grid">
-      <div class="card">
-        <div class="label">Вопрос финала</div>
-        <ContentView :items="f.content" variant="host" :playing="props.hostPlays ? f.step === 'question' : null" />
-      </div>
-      <div class="card a-card">
-        <div class="label">Ответ</div>
-        <div class="answer">{{ f.answer }}</div>
-        <ContentView v-if="f.answerContent?.length" :items="f.answerContent" variant="host" />
-        <div v-if="f.comment" class="comment">{{ f.comment }}</div>
-      </div>
-    </div>
-
     <div v-if="f.step === 'bets'" class="actions">
-      <button class="btn primary huge" @click="showQuestion"><Icon name="play" /> Показать вопрос</button>
+      <button class="btn primary huge" @click="showQuestion"><Icon name="play" /> Вопрос прочитан — принимать ответы</button>
       <span class="muted">{{ allBets ? 'Все ставки сделаны' : 'Ждём ставки…' }}</span>
     </div>
+    <p v-if="f.step === 'bets'" class="muted small">
+      Когда все сделают ставки, прочитайте вопрос со своего листа и откройте приём ответов — пойдёт время, игроки пишут
+      ответ на телефонах.
+    </p>
 
     <template v-if="f.step === 'question'">
       <TimerBar :timer="s.timers.final" :now="now" big :warn-at="10000" />
@@ -152,7 +149,6 @@ async function closeAnswers() {
         </div>
       </div>
       <div class="actions">
-        <button class="btn big" :disabled="f.answerShown" @click="run('j.final.answer')"><Icon name="eye" /> Показать правильный ответ</button>
         <button class="btn primary big" @click="run('j.results')"><Icon name="trophy" /> Итоги игры</button>
       </div>
     </template>
@@ -246,34 +242,10 @@ async function closeAnswers() {
   color: var(--ok-2);
   font-weight: 700;
 }
-.q-grid {
-  display: grid;
-  grid-template-columns: 3fr 2fr;
-  gap: 12px;
-}
-.a-card {
-  border-color: #f6d58f;
-  background: linear-gradient(180deg, var(--gold-soft), var(--panel) 70%);
-}
-.answer {
-  font-size: 1.4rem;
-  font-weight: 800;
-  color: #b45309;
-}
-.comment {
-  color: var(--muted);
-  font-size: 0.9rem;
-  white-space: pre-wrap;
-}
 .actions {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-}
-@media (max-width: 900px) {
-  .q-grid {
-    grid-template-columns: 1fr;
-  }
 }
 </style>

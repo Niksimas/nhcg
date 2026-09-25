@@ -1,14 +1,15 @@
 <script setup lang="ts">
-// Подготовка к игре: подключение игроков, выбор режима и пакета, старт.
+// Подготовка к игре: подключение игроков, выбор режима, ход игры (раунды и темы), старт.
+// Вопросы ведущий читает со своего листа — программе нужен только «скелет» игры.
 import { computed, ref } from 'vue'
-import type { Mode } from '../../lib/types'
+import type { Mode, Settings } from '../../lib/types'
 import { plural } from '../../lib/util'
 import QrCode from '../../components/QrCode.vue'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 import { formatCode, roomPath } from '../../lib/room'
 
-const { state, run, openPacks, openJoin } = useHost()
+const { state, run, openJoin, openSettings } = useHost()
 const s = computed(() => state.value!)
 const url = computed(() => s.value.joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))
 const connected = computed(() => s.value.players.filter((p) => p.connected).length)
@@ -27,12 +28,12 @@ const MODES: { id: Mode; title: string; text: string }[] = [
   {
     id: 'jeopardy',
     title: 'Своя игра',
-    text: 'Темы по 5 вопросов (10–50), за ошибку — минус. Раунды: открытый, полуоткрытый, закрытый, командирский. Нужен пакет вопросов.',
+    text: 'Темы по 5 вопросов (10–50), за ошибку — минус. Раунды: открытый, полуоткрытый, закрытый, командирский.',
   },
   {
     id: 'brainring',
     title: 'Брейн-ринг',
-    text: 'Бои команд по 5 вопросов, минута на обсуждение, фальстарты. За победу в бою +1 в сквозную таблицу. Можно без пакета.',
+    text: 'Бои команд по 5 вопросов, минута на обсуждение, фальстарты. За победу в бою +1 в сквозную таблицу.',
   },
   {
     id: 'khamsa',
@@ -41,7 +42,15 @@ const MODES: { id: Mode; title: string; text: string }[] = [
   },
 ]
 
-const canStart = computed(() => s.value.mode === 'brainring' || !!s.value.pack)
+const st = computed(() => s.value.settings)
+
+function setNum(key: keyof Settings, ev: Event) {
+  const v = Number((ev.target as HTMLInputElement).value)
+  if (Number.isFinite(v)) void run('settings.update', { patch: { [key]: v } })
+}
+function setValue(key: keyof Settings, value: unknown) {
+  void run('settings.update', { patch: { [key]: value } })
+}
 
 function setMode(mode: Mode) {
   if (mode !== s.value.mode) void run('mode.set', { mode })
@@ -144,38 +153,65 @@ function openScreen() {
     </section>
 
     <section class="card">
-      <div class="step-title"><span class="num">3</span> Пакет вопросов</div>
-      <div class="pack-row">
-        <div class="grow">
-          <template v-if="s.pack">
-            <div class="pack-title">{{ s.pack.title }}</div>
-            <div class="muted small">
-              {{ s.pack.rounds.map((r) => r.name).join(' · ') }}
-            </div>
-          </template>
-          <template v-else>
-            <div class="pack-title muted">Пакет не выбран</div>
-            <div class="muted small">
-              {{
-                s.mode === 'brainring'
-                  ? 'Для брейн-ринга пакет не обязателен.'
-                  : s.mode === 'khamsa'
-                    ? 'Для «Хамсы» выберите пакет — например, встроенный «Демо: Хамса».'
-                    : 'Для «Своей игры» выберите пакет — например, встроенный демо-пакет.'
-              }}
-            </div>
-          </template>
+      <div class="step-title"><span class="num">3</span> Ход игры</div>
+      <p class="muted small sheet">
+        Вопросы вы читаете со своего листа — программа ведёт кнопки, время и счёт.
+        {{ s.mode === 'brainring' ? '' : 'Названия тем можно вписать по ходу игры, щёлкнув по теме.' }}
+      </p>
+      <template v-if="s.mode === 'jeopardy'">
+        <div class="shape">
+          <label class="field">
+            <span>Правила</span>
+            <select class="select" :value="st.jFormat" @change="setValue('jFormat', ($event.target as HTMLSelectElement).value)">
+              <option value="sport">спортивные</option>
+              <option value="tv">как на ТВ</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Раундов</span>
+            <input class="input nums" type="number" min="1" max="20" :value="st.jRounds" @change="setNum('jRounds', $event)" />
+          </label>
+          <label class="field">
+            <span>Тем в раунде</span>
+            <input class="input nums" type="number" min="1" max="12" :value="st.jThemes" @change="setNum('jThemes', $event)" />
+          </label>
+          <label class="field">
+            <span>Вопросов в теме</span>
+            <input class="input nums" type="number" min="1" max="10" :value="st.jQuestions" @change="setNum('jQuestions', $event)" />
+          </label>
+          <label v-if="st.jFormat === 'sport'" class="field">
+            <span>Стоимость</span>
+            <select class="select" :value="st.jPrices" @change="setValue('jPrices', ($event.target as HTMLSelectElement).value)">
+              <option value="x10">10, 20, 30…</option>
+              <option value="x1">1, 2, 3…</option>
+              <option value="x100">100, 200, 300…</option>
+            </select>
+          </label>
         </div>
-        <button class="btn" @click="openPacks"><Icon name="folder" /> {{ s.pack ? 'Сменить' : 'Выбрать пакет' }}</button>
-        <button v-if="s.pack && s.mode === 'brainring'" class="btn ghost" @click="run('pack.unload')">Без пакета</button>
+        <label v-if="st.jFormat === 'tv'" class="check">
+          <input type="checkbox" :checked="st.jFinal" @change="setValue('jFinal', ($event.target as HTMLInputElement).checked)" />
+          <span>Финал со ставками после раундов <span class="muted">(стоимость: 100–500 в первом раунде, 200–1000 во втором…)</span></span>
+        </label>
+      </template>
+      <p v-else-if="s.mode === 'khamsa'" class="shape-text">
+        4 раунда по 5 тем из 5 вопросов — <b>явный, полуявный, тайный, четвёртый</b> — и раунд <b>«Хамса»</b> на ставку.
+        Стоимость: 100–500, 200–1000, 300–1500, 400–2000.
+      </p>
+      <div v-else class="shape">
+        <label class="field">
+          <span>Вопросов в бою</span>
+          <input class="input nums" type="number" min="0" max="100" :value="st.brBattleQuestions" @change="setNum('brBattleQuestions', $event)" />
+        </label>
+        <label class="field">
+          <span>Секунд на вопрос</span>
+          <input class="input nums" type="number" min="5" max="600" :value="st.brMainTime" @change="setNum('brMainTime', $event)" />
+        </label>
       </div>
+      <button class="btn ghost small more" @click="openSettings"><Icon name="settings" /> Все настройки: время, штрафы, капитаны</button>
     </section>
 
     <div class="start-row">
-      <button class="btn primary huge" :disabled="!canStart" @click="start">
-        <Icon name="play" /> Начать игру
-      </button>
-      <p v-if="!canStart" class="muted">Выберите пакет вопросов, чтобы начать «Свою игру».</p>
+      <button class="btn primary huge" @click="start"><Icon name="play" /> Начать игру</button>
     </div>
   </div>
 </template>
@@ -294,16 +330,20 @@ function openScreen() {
 .add-team {
   max-width: 520px;
 }
-.pack-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
+.sheet {
+  margin: -4px 0 12px;
 }
-.pack-title {
-  font-size: 1.15rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
+.shape {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px 12px;
+  margin-bottom: 10px;
+}
+.shape-text {
+  margin: 0 0 10px;
+}
+.more {
+  margin-top: 4px;
 }
 .small {
   font-size: 0.85rem;

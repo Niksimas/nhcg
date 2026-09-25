@@ -5,14 +5,12 @@
 // по которому к ней подключаются игроки и экраны — в локальной сети или через интернет.
 import fs from 'node:fs'
 import path from 'node:path'
-import { createHash, randomBytes, randomInt } from 'node:crypto'
+import { randomBytes, randomInt } from 'node:crypto'
 import { Game } from './game/game.js'
 import { Hub } from './hub.js'
-import { PackStore, PackError } from './packs/store.js'
 import { getLanAddresses, isLocalAddress } from './net.js'
 
 const KEY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-const LIB_RE = /^(local|[0-9a-f]{20})$/
 
 export class RoomError extends Error {
   constructor(message, status = 400) {
@@ -32,15 +30,6 @@ export function isValidCode(code) {
 
 export function newHostKey(length = 10) {
   return [...randomBytes(length)].map((b) => KEY_ALPHABET[b % KEY_ALPHABET.length]).join('')
-}
-
-// Идентификатор библиотеки пакетов ведущего — хэш секретного токена из его браузера.
-export function libIdForOwner(token) {
-  return createHash('sha256').update(String(token)).digest('hex').slice(0, 20)
-}
-
-export function isValidLibId(libId) {
-  return typeof libId === 'string' && LIB_RE.test(libId)
 }
 
 // Запрос пришёл через обратный прокси или туннель (nginx, Caddy, cloudflared, ngrok…)?
@@ -66,22 +55,6 @@ export function originFromRequest(req) {
   return `${proto === 'https' ? 'https' : 'http'}://${host}`
 }
 
-async function dirSize(dir) {
-  let total = 0
-  let entries = []
-  try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true })
-  } catch {
-    return 0
-  }
-  for (const e of entries) {
-    const full = path.join(dir, e.name)
-    if (e.isDirectory()) total += await dirSize(full)
-    else total += (await fs.promises.stat(full).catch(() => ({ size: 0 }))).size
-  }
-  return total
-}
-
 function writeJsonAtomicSync(file, data) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
   const tmp = `${file}.${randomBytes(3).toString('hex')}.tmp`
@@ -94,16 +67,13 @@ export class Room {
     this.manager = manager
     this.code = meta.code
     this.hostKey = meta.hostKey
-    this.libId = meta.libId
     this.createdAt = meta.createdAt ?? Date.now()
     this.lastActive = meta.lastActive ?? Date.now()
     this.isDefault = !!meta.isDefault
     this.originHint = meta.originHint ?? null
     this.dir = path.join(manager.roomsDir, this.code)
-    this.store = manager.library(this.libId)
     this.closed = false
     this.game = new Game({
-      packStore: this.store,
       persist: { save: (data) => this.saveState(data) },
     })
     this.hub = new Hub({
@@ -119,7 +89,6 @@ export class Room {
 
   touch() {
     this.lastActive = Date.now()
-    this.manager.touchLibrary(this.libId)
   }
 
   noteOrigin(req) {
@@ -135,7 +104,6 @@ export class Room {
     return {
       code: this.code,
       hostKey: this.hostKey,
-      libId: this.libId,
       createdAt: this.createdAt,
       lastActive: this.lastActive,
       isDefault: this.isDefault,
@@ -185,110 +153,16 @@ export class Room {
 }
 
 export class RoomManager {
-  constructor({ config, builtinDir }) {
+  constructor({ config }) {
     this.config = config
     this.mode = config.rooms ? 'rooms' : 'local'
     this.dataDir = config.dataDir
-    this.builtinDir = builtinDir
     this.roomsDir = path.join(config.dataDir, 'rooms')
     this.rooms = new Map()
-    this.libraries = new Map()
-    this.libraryTouched = new Map()
-    this.storage = { at: 0, bytes: 0 }
     this.defaultRoom = null
     this.port = config.port
     this.protocol = config.tls ? 'https' : 'http'
     fs.mkdirSync(this.roomsDir, { recursive: true })
-  }
-
-  // Библиотека пакетов: 'local' — пакеты этого компьютера (папка data/packs),
-  // иначе — библиотека ведущего на публичном сервере (data/libraries/<id>/packs).
-  library(libId) {
-    if (!isValidLibId(libId)) throw new RoomError('Неверная библиотека пакетов')
-    let store = this.libraries.get(libId)
-    if (!store) {
-      const rooms = this.mode === 'rooms'
-      store = new PackStore({
-        dataDir: this.libraryDir(libId),
-        builtinDir: this.builtinDir,
-        libId,
-        quotaBytes: rooms ? this.config.libraryQuotaMb * 1024 * 1024 : 0,
-        serverCheck: rooms ? (extra) => this.checkServerStorage(extra) : null,
-      })
-      this.libraries.set(libId, store)
-    }
-    return store
-  }
-
-  libraryDir(libId) {
-    return libId === 'local' ? this.dataDir : path.join(this.dataDir, 'libraries', libId)
-  }
-
-  // Отметка «библиотекой пользовались» (не чаще раза в час) — по ней удаляются давно забытые библиотеки.
-  touchLibrary(libId, now = Date.now()) {
-    if (libId === 'local' || now - (this.libraryTouched.get(libId) ?? 0) < 3600_000) return
-    this.libraryTouched.set(libId, now)
-    try {
-      const dir = this.libraryDir(libId)
-      fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(path.join(dir, '.last-used'), String(now))
-    } catch {
-      // не критично
-    }
-  }
-
-  // Сколько места занимают все библиотеки ведущих (пересчитывается не чаще раза в минуту).
-  async storageUsage(now = Date.now()) {
-    if (now - this.storage.at > 60_000) {
-      const root = path.join(this.dataDir, 'libraries')
-      this.storage = { at: now, bytes: fs.existsSync(root) ? await dirSize(root) : 0 }
-    }
-    return this.storage.bytes
-  }
-
-  // Общий лимит места под пакеты на сервере комнат — чтобы диск не заполнили множеством библиотек.
-  async checkServerStorage(extraBytes) {
-    const limit = (this.config.storageQuotaMb ?? 0) * 1024 * 1024
-    if (!limit) return
-    const used = await this.storageUsage()
-    if (used + extraBytes > limit) {
-      throw new PackError('На сервере закончилось место для пакетов. Попробуйте позже или обратитесь к владельцу сервера.')
-    }
-    // Учитываем загрузку сразу, не дожидаясь пересчёта.
-    this.storage.bytes += extraBytes
-  }
-
-  // Удаление библиотек пакетов, которыми долго никто не пользовался (только в режиме комнат).
-  sweepLibraries(now = Date.now()) {
-    if (this.mode !== 'rooms') return 0
-    const root = path.join(this.dataDir, 'libraries')
-    if (!fs.existsSync(root)) return 0
-    const used = new Set([...this.rooms.values()].map((r) => r.libId))
-    let removed = 0
-    for (const name of fs.readdirSync(root)) {
-      if (!isValidLibId(name) || name === 'local' || used.has(name)) continue
-      const dir = path.join(root, name)
-      let last = 0
-      try {
-        last = Number(fs.readFileSync(path.join(dir, '.last-used'), 'utf8')) || fs.statSync(dir).mtimeMs
-      } catch {
-        last = fs.statSync(dir, { throwIfNoEntry: false })?.mtimeMs ?? 0
-      }
-      if (now - last > this.config.libraryTtlDays * 86400_000) {
-        fs.rmSync(dir, { recursive: true, force: true })
-        this.libraries.delete(name)
-        this.libraryTouched.delete(name)
-        removed++
-      }
-    }
-    return removed
-  }
-
-  // Библиотека для раздачи медиафайлов: только уже существующие, чтобы по ссылке нельзя было создавать папки.
-  existingLibrary(libId) {
-    if (!isValidLibId(libId)) return null
-    if (this.libraries.has(libId)) return this.libraries.get(libId)
-    return fs.existsSync(this.libraryDir(libId)) ? this.library(libId) : null
   }
 
   generateCode() {
@@ -302,7 +176,7 @@ export class RoomManager {
     return this.rooms.get(normalizeCode(code)) ?? null
   }
 
-  async create({ libId, originHint = null, isDefault = false, hostKey = null }) {
+  async create({ originHint = null, isDefault = false, hostKey = null } = {}) {
     if (!isDefault && this.mode !== 'rooms') {
       throw new RoomError('Сервер запущен в режиме одной игры. Чтобы создавать комнаты, запустите его с параметром --rooms', 403)
     }
@@ -312,13 +186,11 @@ export class RoomManager {
     const room = new Room(this, {
       code: this.generateCode(),
       hostKey: hostKey ?? newHostKey(),
-      libId,
       isDefault,
       originHint,
     })
     this.rooms.set(room.code, room)
     room.saveMeta()
-    this.touchLibrary(libId)
     if (isDefault) this.defaultRoom = room
     return room
   }
@@ -349,7 +221,7 @@ export class RoomManager {
       } catch {
         continue
       }
-      if (meta.code !== name || typeof meta.hostKey !== 'string' || !isValidLibId(meta.libId)) continue
+      if (meta.code !== name || typeof meta.hostKey !== 'string') continue
       // Комнаты из другого режима не поднимаем: в local — только основная, в rooms — только обычные.
       if ((this.mode === 'local') !== !!meta.isDefault) continue
       if (this.expired(meta)) {
@@ -366,7 +238,7 @@ export class RoomManager {
   // Основная комната режима «одна игра». Ключ ведущего берётся из data/host-key.txt, чтобы не менялся.
   async ensureDefaultRoom() {
     if (this.defaultRoom) return this.defaultRoom
-    const room = await this.create({ libId: 'local', isDefault: true, hostKey: this.loadHostKey() })
+    const room = await this.create({ isDefault: true, hostKey: this.loadHostKey() })
     // Перенос сохранения из первой версии программы (data/game-state.json).
     const legacy = path.join(this.dataDir, 'game-state.json')
     if (fs.existsSync(legacy)) {

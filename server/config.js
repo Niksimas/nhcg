@@ -54,10 +54,6 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env) {
       'trust-proxy': { type: 'boolean' },
       'max-rooms': { type: 'string' },
       'room-ttl': { type: 'string' },
-      'max-upload-mb': { type: 'string' },
-      'library-quota-mb': { type: 'string' },
-      'library-ttl-days': { type: 'string' },
-      'storage-quota-mb': { type: 'string' },
       'room-create-limit': { type: 'string' },
       'tls-cert': { type: 'string' },
       'tls-key': { type: 'string' },
@@ -86,10 +82,6 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env) {
     trustProxy: !!values['trust-proxy'] || truthy(env.TRUST_PROXY),
     maxRooms: intOption(values['max-rooms'] ?? env.MAX_ROOMS, 500, { min: 1, max: 100_000 }, '--max-rooms', problems),
     roomTtlHours: intOption(values['room-ttl'] ?? env.ROOM_TTL_HOURS, 12, { min: 1, max: 24 * 365 }, '--room-ttl', problems),
-    maxUploadMb: intOption(values['max-upload-mb'] ?? env.MAX_UPLOAD_MB, rooms ? 100 : 2048, { min: 1, max: 100_000 }, '--max-upload-mb', problems),
-    libraryQuotaMb: intOption(values['library-quota-mb'] ?? env.LIBRARY_QUOTA_MB, 500, { min: 1, max: 1_000_000 }, '--library-quota-mb', problems),
-    storageQuotaMb: intOption(values['storage-quota-mb'] ?? env.STORAGE_QUOTA_MB, 10240, { min: 0, max: 100_000_000 }, '--storage-quota-mb', problems),
-    libraryTtlDays: intOption(values['library-ttl-days'] ?? env.LIBRARY_TTL_DAYS, 90, { min: 1, max: 100_000 }, '--library-ttl-days', problems),
     roomCreateLimit: intOption(values['room-create-limit'] ?? env.ROOM_CREATE_LIMIT, 10, { min: 1, max: 100_000 }, '--room-create-limit', problems),
     tls: tlsCert && tlsKey ? { cert: path.resolve(tlsCert), key: path.resolve(tlsKey) } : null,
     distDir: path.join(ROOT, 'dist'),
@@ -100,7 +92,7 @@ export function loadConfig(argv = process.argv.slice(2), env = process.env) {
 }
 
 export const HELP = `
-Своя игра / Брейн-ринг — сервер для игры по Wi-Fi и через интернет
+Своя игра / Брейн-ринг / Хамса — сервер для игры по Wi-Fi и через интернет
 
   npm start                  запустить (при первом запуске соберёт интерфейс)
   npm run dev                режим разработки (горячая перезагрузка интерфейса)
@@ -109,7 +101,7 @@ export const HELP = `
 Параметры (в скобках — переменная окружения):
   --port <число>             порт (PORT; по умолчанию 3000, если занят — следующий свободный)
   --host <адрес>             на каком адресе слушать (HOST; по умолчанию 0.0.0.0 — все сети)
-  --data <папка>             где хранить пакеты и сохранения (DATA_DIR; по умолчанию ./data)
+  --data <папка>             где хранить сохранения игр (DATA_DIR; по умолчанию ./data)
   --no-open                  не открывать браузер автоматически (NO_OPEN=1)
   --require-key              спрашивать ключ ведущего даже на этом компьютере (REQUIRE_HOST_KEY=1)
 
@@ -119,10 +111,6 @@ export const HELP = `
   --trust-proxy              сервер за nginx/Caddy/туннелем — брать IP игроков из X-Forwarded-For (TRUST_PROXY=1)
   --max-rooms <число>        максимум комнат одновременно (MAX_ROOMS; по умолчанию 500)
   --room-ttl <часы>          удалять комнату после стольких часов без игры (ROOM_TTL_HOURS; по умолчанию 12)
-  --max-upload-mb <МБ>       максимальный размер загружаемого файла (MAX_UPLOAD_MB; 2048, в режиме комнат 100)
-  --library-quota-mb <МБ>    место под пакеты одного ведущего в режиме комнат (LIBRARY_QUOTA_MB; по умолчанию 500)
-  --library-ttl-days <дни>   удалять пакеты ведущего, если ими не пользовались столько дней (LIBRARY_TTL_DAYS; 90)
-  --storage-quota-mb <МБ>    сколько места всего могут занять пакеты всех ведущих (STORAGE_QUOTA_MB; 10240, 0 — без лимита)
   --room-create-limit <N>    сколько комнат можно создать с одного IP за 10 минут (ROOM_CREATE_LIMIT; 10)
   --tls-cert <файл>          сертификат для HTTPS без прокси (TLS_CERT)
   --tls-key <файл>           закрытый ключ для HTTPS (TLS_KEY)

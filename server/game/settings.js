@@ -6,9 +6,7 @@ export const SETTINGS_SPEC = {
   teamMode: { type: 'bool', def: false },
   allowPlayerTeams: { type: 'bool', def: true },
   joinAddress: { type: 'string', def: '', max: 200 },
-  showQuestionOnPhones: { type: 'bool', def: true },
   phoneSelect: { type: 'bool', def: true },
-  hideAnswerOnHost: { type: 'bool', def: false },
   // Игроки в разных местах (игра по интернету): кнопки открываются синхронно по сигналу на экранах,
   // а допуск на задержку сети больше.
   onlineMode: { type: 'bool', def: false },
@@ -20,8 +18,16 @@ export const SETTINGS_SPEC = {
   // полуоткрытый, закрытый и командирский, от команды за столом один игрок); tv — как в телепередаче
   // (табло, кот в мешке, аукцион, финал со ставками).
   jFormat: { type: 'enum', def: 'sport', values: ['sport', 'tv'] },
-  // Стоимость вопросов темы в спортивном формате: 10–50, 1–5, 100–500 или как в пакете.
-  jPrices: { type: 'enum', def: 'x10', values: ['x10', 'x1', 'x100', 'pack'] },
+  // Скелет игры (вопросы ведущий читает с листа): сколько раундов, тем в раунде и вопросов в теме.
+  // В спортивном формате по умолчанию 4 раунда (открытый, полуоткрытый, закрытый, командирский) по 4 темы.
+  jRounds: { type: 'int', def: 4, min: 1, max: 20 },
+  jThemes: { type: 'int', def: 4, min: 1, max: 12 },
+  jQuestions: { type: 'int', def: 5, min: 1, max: 10 },
+  // Финал со ставками после обычных раундов (телевизионный формат).
+  jFinal: { type: 'bool', def: true },
+  // Стоимость вопросов темы в спортивном формате: 10–50, 1–5 или 100–500.
+  // В телевизионном — 100–500 в первом раунде, 200–1000 во втором и т.д.
+  jPrices: { type: 'enum', def: 'x10', values: ['x10', 'x1', 'x100'] },
   // Кто от команды играет тему: один игрок (его выбирает капитан) или вся команда.
   jTableMode: { type: 'enum', def: 'one', values: ['one', 'team'] },
   // Время капитанам на выбор игроков: на весь раунд (открытый, закрытый) и на одну тему (полуоткрытый).
@@ -29,7 +35,8 @@ export const SETTINGS_SPEC = {
   jAssignThemeTime: { type: 'int', def: 20, min: 0, max: 600 },
   // Игрок играет не больше одной темы за раунд (если в команде хватает игроков на все темы).
   jOnePerPlayer: { type: 'bool', def: true },
-  // Кот в мешке, аукцион и вопрос без риска в спортивном формате (в телевизионном — всегда как в пакете).
+  // Кот в мешке, аукцион и вопрос без риска в спортивном формате (в телевизионном — всегда).
+  // Спецвопрос ведущий отмечает сам, когда дойдёт до него в своём листе.
   jSpecials: { type: 'bool', def: false },
   jBuzzTime: { type: 'int', def: 10, min: 0, max: 600 },
   jAnswerTime: { type: 'int', def: 15, min: 0, max: 600 },
@@ -73,8 +80,6 @@ export const SETTINGS_SPEC = {
   brTotal: { type: 'enum', def: 'sum', values: ['sum', 'wins'] },
   brCarryOver: { type: 'bool', def: false },
   brQuestionValue: { type: 'int', def: 1, min: 1, max: 1000 },
-  brAutoShowQuestion: { type: 'bool', def: false },
-  brShowAnswer: { type: 'bool', def: true },
 }
 
 export function defaultSettings() {

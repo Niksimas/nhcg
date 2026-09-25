@@ -8,6 +8,7 @@ import BoardGrid from '../../components/BoardGrid.vue'
 import TimerBar from '../../components/TimerBar.vue'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
+import { askThemeName } from './themeName'
 
 const { state, run, now } = useHost()
 const s = computed(() => state.value!)
@@ -56,6 +57,12 @@ async function select(id: string, played: boolean) {
   if (played && !confirm('Этот вопрос уже сыгран. Открыть его снова?')) return
   await run('j.select', { id, force: played })
 }
+
+// Название темы из листа ведущего.
+function rename(ti: number) {
+  const name = askThemeName(j.value, ti)
+  if (name !== null) void run('j.theme.name', { round: j.value.roundIndex, theme: ti, name })
+}
 </script>
 
 <template>
@@ -87,6 +94,12 @@ async function select(id: string, played: boolean) {
       <p class="muted small">
         Обычно — самого сильного. Затем команды по очереди уберут темы, оставшуюся сыграют выбранные игроки.
       </p>
+      <div class="theme-names">
+        <span class="muted small">Темы раунда:</span>
+        <button v-for="(th, ti) in board" :key="ti" class="name-chip" :class="{ unnamed: !th.named }" title="Вписать название темы" @click="rename(ti)">
+          {{ th.name ?? `Тема ${ti + 1}` }} <Icon name="edit" size="0.8em" />
+        </button>
+      </div>
       <div class="assign-table" :style="{ '--n': 1 }">
         <div class="cell head">Команда</div>
         <div class="cell head">Играет раунд</div>
@@ -122,10 +135,13 @@ async function select(id: string, played: boolean) {
       </p>
       <div class="assign-table" :style="{ '--n': assignScopeThemes.length }">
         <div class="cell head">Команда</div>
-        <div v-for="ti in assignScopeThemes" :key="ti" class="cell head">
-          {{ themeName(ti) }}
-          <span v-if="board[ti]?.hidden" class="faint small"> (игроки не видят)</span>
-        </div>
+        <button v-for="ti in assignScopeThemes" :key="ti" class="cell head th-name" title="Вписать название темы" @click="rename(ti)">
+          <span>
+            {{ themeName(ti) }}
+            <span v-if="board[ti]?.hidden" class="faint small"> (игроки не видят)</span>
+          </span>
+          <Icon name="edit" size="0.85em" />
+        </button>
         <template v-for="t in teams" :key="t.id">
           <div class="cell team" :style="{ '--c': t.color, '--t': textOn(t.color) }">
             <span class="team-name">{{ t.name }}</span>
@@ -165,23 +181,19 @@ async function select(id: string, played: boolean) {
         либо нажмите тему здесь за команду. Осталось тем: {{ strikeLeft }}.
       </p>
       <div class="strike-list">
-        <button
-          v-for="(th, ti) in board"
-          :key="ti"
-          class="strike-theme"
-          :class="{ struck: th.struck }"
-          :disabled="th.struck"
-          @click="run('j.strike', { index: ti })"
-        >
-          <span>{{ th.name }}</span>
-          <span v-if="!th.struck" class="strike-act"><Icon name="x" /> Убрать</span>
-        </button>
+        <div v-for="(th, ti) in board" :key="ti" class="strike-theme" :class="{ struck: th.struck }">
+          <button class="st-name" :disabled="th.struck" title="Вписать название темы" @click="rename(ti)">
+            {{ th.name }} <Icon v-if="!th.struck" name="edit" size="0.8em" />
+          </button>
+          <button v-if="!th.struck" class="strike-act" @click="run('j.strike', { index: ti })"><Icon name="x" /> Убрать</button>
+        </div>
       </div>
     </div>
 
     <!-- Темы раунда -->
     <template v-else-if="j.stage === 'board'">
-      <BoardGrid :board="board" variant="host" clickable @select="select" />
+      <BoardGrid :board="board" variant="host" clickable renamable @select="select" @rename="rename" />
+      <p class="muted small">Щёлкните по теме, чтобы вписать её название из своего листа — его увидят игроки и экран.</p>
       <div class="row wrap actions">
         <button v-if="nextTheme != null" class="btn primary huge" @click="run('j.next')">
           <Icon name="play" /> {{ j.themeIndex === nextTheme ? 'Продолжить тему' : 'Следующая тема' }}: «{{ themeName(nextTheme) }}»
@@ -201,7 +213,12 @@ async function select(id: string, played: boolean) {
     <!-- Тема объявлена -->
     <div v-else-if="j.stage === 'theme' && j.themeIndex != null" class="card theme-card">
       <div class="label">Тема {{ j.themeIndex + 1 }} из {{ board.length }}</div>
-      <h2 class="theme-title">{{ themeName(j.themeIndex) }}</h2>
+      <div class="row">
+        <h2 class="theme-title">{{ themeName(j.themeIndex) }}</h2>
+        <button class="btn small ghost" title="Вписать название темы из своего листа" @click="rename(j.themeIndex)">
+          <Icon name="edit" /> Название
+        </button>
+      </div>
       <div v-if="j.table" class="table-players">
         <div v-for="t in teams" :key="t.id" class="tp" :style="{ '--c': t.color, '--t': textOn(t.color) }">
           <span class="team-name">{{ t.name }}</span>
@@ -418,7 +435,7 @@ async function select(id: string, played: boolean) {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  padding: 10px 14px;
+  padding: 6px 8px 6px 14px;
   border-radius: 12px;
   border: 1px solid var(--board-edge);
   background: linear-gradient(180deg, var(--board), var(--board-2));
@@ -426,15 +443,58 @@ async function select(id: string, played: boolean) {
   color: var(--text);
   font-weight: 800;
   text-transform: uppercase;
+}
+.st-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  padding: 4px 0;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
   cursor: pointer;
   text-align: left;
-  transition:
-    border-color 0.15s,
-    background 0.15s;
 }
-.strike-theme:hover:not(:disabled) {
-  border-color: #f5b5b5;
-  background: var(--bad-soft);
+.st-name:hover:not(:disabled) {
+  color: var(--accent);
+}
+.theme-names {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.name-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--line-2);
+  background: var(--panel);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.name-chip.unnamed {
+  color: var(--muted);
+}
+.name-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.th-name {
+  justify-content: space-between;
+  border: 1px dashed transparent;
+  font: inherit;
+  cursor: pointer;
+}
+.th-name:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .strike-theme.struck {
   opacity: 0.35;
@@ -445,9 +505,19 @@ async function select(id: string, played: boolean) {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  padding: 5px 10px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: none;
+  font: inherit;
   font-size: 0.8rem;
   color: var(--bad);
   text-transform: none;
+  cursor: pointer;
+}
+.strike-act:hover {
+  background: var(--bad-soft);
+  border-color: #f5b5b5;
 }
 .cell.struck {
   opacity: 0.4;

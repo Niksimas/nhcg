@@ -56,15 +56,13 @@ test('полный цикл: ведущий, два игрока, «Своя и�
   assert.equal(ack.result, 'test')
   await host.wait((m) => m.t === 'event' && m.name === 'test')
 
-  // Телевизионный формат: табло и цены из пакета (спортивный проверяется в game.test.js).
+  // Телевизионный формат: табло тем и цен (вопросы ведущий читает с листа; спортивный — в game.test.js).
   await host.cmd('settings.update', { patch: { jFormat: 'tv' } })
-  await host.cmd('pack.load', { packId: 'demo-svoya-igra' })
   await host.cmd('game.start')
   await host.waitState((s) => s.stage === 'game' && s.jeopardy?.stage === 'board')
   await host.cmd('j.select', { id: '0:0:0' })
   await anna.waitState((s) => s.jeopardy?.question?.step === 'reading')
-  assert.equal(anna.state.jeopardy.question.answer, null, 'игрок не видит ответ')
-  assert.ok(host.state.jeopardy.question.answer, 'ведущий видит ответ')
+  assert.equal(anna.state.jeopardy.question.price, 100)
 
   await host.cmd('j.arm')
   await anna.waitState((s) => s.buzzer.status === 'armed')
@@ -139,25 +137,10 @@ test('«Брейн-ринг» по сети: фальстарт и «Время!
   for (const c of [host, a, b]) c.close()
 })
 
-test('HTTP: пакеты, медиа и защита путей', async () => {
+test('HTTP: страницы игры открываются, загрузки пакетов больше нет', async () => {
   const base = srv.url
-  const list = await (await fetch(`${base}/api/packs`)).json()
-  assert.ok(list.some((p) => p.id === 'demo-svoya-igra'))
-  const media = await fetch(`${base}/media/local/demo-svoya-igra/flag-1.svg`)
-  assert.equal(media.status, 200)
-  assert.match(media.headers.get('content-security-policy'), /sandbox/)
-  const evil = await fetch(`${base}/media/local/demo-svoya-igra/..%2Fpack.json`)
-  assert.equal(evil.status, 404)
-  const created = await (
-    await fetch(`${base}/api/packs`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })
-  ).json()
-  assert.ok(created.id)
-  const bad = await fetch(`${base}/api/packs/${created.id}`, {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: '"строка"',
-  })
-  assert.equal(bad.status, 400)
+  assert.equal((await fetch(`${base}/api/packs`)).status, 404)
+  assert.equal((await fetch(`${base}/media/local/pack/file.png`)).status, 200, 'неизвестный адрес — страница приложения')
   const page = await fetch(`${base}/screen`)
   assert.equal(page.status, 200)
   assert.match(await page.text(), /<div id="app">/)

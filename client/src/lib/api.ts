@@ -1,4 +1,4 @@
-// REST-запросы ведущего (пакеты вопросов, комнаты).
+// REST-запросы: создание и закрытие комнат.
 import { storage } from './util'
 import { apiBase, roomKey } from './room'
 
@@ -50,37 +50,6 @@ export async function api<T = unknown>(method: string, path: string, body?: unkn
   }
   if (!res.ok) throw await parseError(res)
   return res.json() as Promise<T>
-}
-
-// Загрузка файла с прогрессом (для больших пакетов SIGame).
-export function upload<T = unknown>(path: string, file: File, onProgress?: (fraction: number) => void): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', `${apiBase()}${path}`)
-    for (const [k, v] of Object.entries(headers())) xhr.setRequestHeader(k, v)
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable && onProgress) onProgress(e.loaded / e.total)
-    }
-    xhr.onload = () => {
-      let data: { error?: string } | null = null
-      try {
-        data = JSON.parse(xhr.responseText)
-      } catch {
-        data = null
-      }
-      if (xhr.status >= 200 && xhr.status < 300) resolve(data as T)
-      else reject(new Error(data?.error || `Ошибка ${xhr.status}`))
-    }
-    xhr.onerror = () => reject(new Error('Нет связи с сервером'))
-    const form = new FormData()
-    form.append('file', file, file.name)
-    xhr.send(form)
-  })
-}
-
-export function downloadUrl(path: string): string {
-  const key = storage.get(hostKeyName())
-  return `${apiBase()}${path}${key ? `?key=${encodeURIComponent(key)}` : ''}`
 }
 
 // Запрос вне комнаты (создание комнаты, проверка кода).

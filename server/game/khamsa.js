@@ -13,6 +13,7 @@
 // ответа право ответа переходит к следующему нажавшему (5 секунд на обдумывание). Ошибка — минус стоимость.
 //
 // Ход тем и вопросов, выбор игроков капитанами и раунд со ставками — общие со спортивной «Своей игрой».
+// Вопросы ведущий читает с листа: программа знает только скелет игры (раунды, темы, стоимость вопросов).
 
 import { JeopardyMode } from './jeopardy.js'
 import { rankPresses } from './buzzer.js'
@@ -20,6 +21,7 @@ import { GameError } from './util.js'
 
 export const KHAMSA_KINDS = ['open', 'semi', 'closed', 'leaders']
 const KIND_NAME = { open: 'явный', semi: 'полуявный', closed: 'тайный', leaders: 'четвёртый', khamsa: '«Хамса»' }
+const ROUND_NAME = { open: 'Явный раунд', semi: 'Полуявный раунд', closed: 'Тайный раунд', leaders: 'Четвёртый раунд' }
 
 export class KhamsaMode extends JeopardyMode {
   constructor(game) {
@@ -70,7 +72,31 @@ export class KhamsaMode extends JeopardyMode {
     return true
   }
 
-  // Играются все раунды пакета: обычные — по порядку, финальный — это раунд «Хамса».
+  // Скелет «Хамсы»: четыре раунда по пять тем из пяти вопросов и раунд «Хамса» — один вопрос на ставку.
+  structureKey() {
+    return JSON.stringify([this.s.kinds, this.s.names])
+  }
+
+  buildRounds() {
+    const rounds = []
+    const seen = {}
+    for (let ri = 0; ri < KHAMSA_KINDS.length; ri++) {
+      const kind = KHAMSA_KINDS.includes(this.s.kinds?.[ri]) ? this.s.kinds[ri] : KHAMSA_KINDS[ri]
+      seen[kind] = (seen[kind] ?? 0) + 1
+      rounds.push({
+        name: seen[kind] > 1 ? `${ROUND_NAME[kind]} ${seen[kind]}` : ROUND_NAME[kind],
+        type: 'normal',
+        themes: Array.from({ length: 5 }, (_, ti) => this.buildTheme(ri, ti, 5, () => 0)),
+      })
+    }
+    const ri = rounds.length
+    const theme = this.buildTheme(ri, 0, 1, () => 0)
+    theme.name = this.themeName(ri, 0, 'Хамса')
+    rounds.push({ name: 'Хамса', type: 'final', themes: [theme] })
+    return rounds
+  }
+
+  // Играются все пять раундов: четыре обычных по порядку, пятый — раунд «Хамса».
   playable(ri) {
     return !!this.round(ri)
   }

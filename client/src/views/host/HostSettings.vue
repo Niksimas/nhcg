@@ -56,14 +56,6 @@ async function newGame(keepPlayers: boolean) {
         <input type="checkbox" :checked="st.allowPlayerTeams" @change="bool('allowPlayerTeams', $event)" />
         Игроки могут сами создавать команды
       </label>
-      <label class="check">
-        <input type="checkbox" :checked="st.showQuestionOnPhones" @change="bool('showQuestionOnPhones', $event)" />
-        Показывать текст вопроса на телефонах игроков
-      </label>
-      <label class="check">
-        <input type="checkbox" :checked="st.hideAnswerOnHost" @change="bool('hideAnswerOnHost', $event)" />
-        Скрывать ответ на панели ведущего (виден при наведении) — если игроки видят ваш экран
-      </label>
     </section>
 
     <section>
@@ -93,13 +85,24 @@ async function newGame(keepPlayers: boolean) {
         </select>
       </label>
       <div class="grid">
+        <label class="field">
+          <span>Раундов</span>
+          <input class="input" type="number" min="1" max="20" :value="st.jRounds" @change="num('jRounds', $event)" />
+        </label>
+        <label class="field">
+          <span>Тем в раунде</span>
+          <input class="input" type="number" min="1" max="12" :value="st.jThemes" @change="num('jThemes', $event)" />
+        </label>
+        <label class="field">
+          <span>Вопросов в теме</span>
+          <input class="input" type="number" min="1" max="10" :value="st.jQuestions" @change="num('jQuestions', $event)" />
+        </label>
         <label v-if="st.jFormat === 'sport'" class="field">
           <span>Стоимость вопросов темы</span>
           <select class="select" :value="st.jPrices" @change="set('jPrices', ($event.target as HTMLSelectElement).value as Settings['jPrices'])">
             <option value="x10">10, 20, 30, 40, 50</option>
             <option value="x1">1, 2, 3, 4, 5</option>
             <option value="x100">100, 200, 300, 400, 500</option>
-            <option value="pack">как в пакете</option>
           </select>
         </label>
         <label v-if="st.jFormat === 'sport'" class="field">
@@ -145,7 +148,7 @@ async function newGame(keepPlayers: boolean) {
         </label>
         <label class="check">
           <input type="checkbox" :checked="st.jSpecials" @change="bool('jSpecials', $event)" />
-          Кот в мешке, аукцион и вопрос без риска из пакета
+          Кот в мешке, аукцион и вопрос без риска (ведущий отмечает их сам, когда дойдёт до них в листе)
         </label>
         <p class="muted note">
           Вид раунда (открытый, полуоткрытый, закрытый, командирский) выбирается над темами раунда. По умолчанию раунды
@@ -153,6 +156,10 @@ async function newGame(keepPlayers: boolean) {
         </p>
       </template>
       <template v-else>
+        <label class="check">
+          <input type="checkbox" :checked="st.jFinal" @change="bool('jFinal', $event)" />
+          Финал со ставками после раундов
+        </label>
         <label class="check">
           <input type="checkbox" :checked="st.phoneSelect" @change="bool('phoneSelect', $event)" />
           Выбирающий может выбрать вопрос со своего телефона
@@ -213,7 +220,7 @@ async function newGame(keepPlayers: boolean) {
         Неверный ответ отнимает стоимость вопроса
       </label>
       <p class="muted note">
-        Нажатие до конца чтения вопроса — фальстарт: игрок теряет право ответа на этот вопрос. Вид раунда выбирается над
+        Нажатие до того, как ведущий откроет кнопки (дочитает вопрос), — фальстарт: игрок теряет право ответа на этот вопрос. Вид раунда выбирается над
         темами раунда; по умолчанию — явный, полуявный, тайный, четвёртый и «Хамса» со ставками.
       </p>
     </section>
@@ -280,14 +287,6 @@ async function newGame(keepPlayers: boolean) {
       <label class="check">
         <input type="checkbox" :checked="st.brCarryOver" @change="bool('brCarryOver', $event)" />
         Если вопрос не взят — его очки переходят на следующий вопрос
-      </label>
-      <label class="check">
-        <input type="checkbox" :checked="st.brAutoShowQuestion" @change="bool('brAutoShowQuestion', $event)" />
-        Сразу показывать текст вопроса на экране (иначе — по кнопке)
-      </label>
-      <label class="check">
-        <input type="checkbox" :checked="st.brShowAnswer" @change="bool('brShowAnswer', $event)" />
-        Показывать правильный ответ на экране после вопроса
       </label>
     </section>
 

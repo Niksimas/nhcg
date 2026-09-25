@@ -4,7 +4,6 @@ import { serverMeta, setRoom } from './lib/room'
 const Player = () => import('./views/PlayerView.vue')
 const Host = () => import('./views/HostView.vue')
 const Screen = () => import('./views/ScreenView.vue')
-const Editor = () => import('./views/EditorView.vue')
 const Landing = () => import('./views/LandingView.vue')
 
 // Код комнаты — 6 цифр.
@@ -20,11 +19,9 @@ export const router = createRouter({
     { path: '/', component: () => (serverMeta.mode === 'rooms' ? Landing() : Player()), meta: { title: 'Игрок' } },
     { path: '/host', component: Host, beforeEnter: onlyLocal, meta: { title: 'Ведущий' } },
     { path: '/screen', component: Screen, beforeEnter: onlyLocal, meta: { title: 'Экран' } },
-    { path: '/editor/:id', component: Editor, beforeEnter: onlyLocal, meta: { title: 'Редактор пакета' } },
     { path: `/r/${CODE}`, component: Player, meta: { title: 'Игрок' } },
     { path: `/r/${CODE}/host`, component: Host, meta: { title: 'Ведущий' } },
     { path: `/r/${CODE}/screen`, component: Screen, meta: { title: 'Экран' } },
-    { path: `/r/${CODE}/editor/:id`, component: Editor, meta: { title: 'Редактор пакета' } },
     // Короткая ссылка: сайт/482915
     { path: `/${CODE}`, redirect: (to) => `/r/${to.params.code}` },
     { path: '/:pathMatch(.*)*', redirect: '/' },
@@ -37,5 +34,5 @@ router.beforeEach((to) => {
 
 router.afterEach((to) => {
   const title = to.path === '/' && serverMeta.mode === 'rooms' ? 'Главная' : (to.meta.title ?? 'Игра')
-  document.title = `${title} · Своя игра / Брейн-ринг`
+  document.title = `${title} · Своя игра / Брейн-ринг / Хамса`
 })

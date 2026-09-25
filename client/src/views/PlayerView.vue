@@ -7,7 +7,6 @@ import { setHostKey } from '../lib/api'
 import { formatCode, room, roomKey, roomPath, serverMeta } from '../lib/room'
 import { MODE_TITLE } from '../lib/rules'
 import { SoundEngine } from '../lib/sound'
-import type { ContentItem } from '../lib/types'
 import { competitorMap, fmtScore, storage, textOn, TYPE_LABEL, useConnMessage, useServerNow } from '../lib/util'
 import { keepAwake } from '../lib/wakeLock'
 import BuzzerButton from './player/BuzzerButton.vue'
@@ -16,7 +15,6 @@ import FinalPanel from './player/FinalPanel.vue'
 import CaptainAssign from './player/CaptainAssign.vue'
 import StrikePanel from './player/StrikePanel.vue'
 import BoardGrid from '../components/BoardGrid.vue'
-import ContentView from '../components/ContentView.vue'
 import TimerBar from '../components/TimerBar.vue'
 import Modal from '../components/Modal.vue'
 import Icon from '../components/Icon.vue'
@@ -286,16 +284,13 @@ function onKey(e: KeyboardEvent) {
 interface Info {
   top: string
   main: string
-  content: ContentItem[] | null
-  answer: string | null
   timer: string | null
 }
 
 const info = computed<Info>(() => {
   const s = state.value
-  const out: Info = { top: '', main: '', content: null, answer: null, timer: null }
+  const out: Info = { top: '', main: '', timer: null }
   if (!s) return out
-  const showQ = s.settings.showQuestionOnPhones
   if (s.stage === 'lobby') {
     out.top = MODE_TITLE[s.mode] ?? 'Своя игра'
     out.main = 'Ждём начала игры'
@@ -331,18 +326,14 @@ const info = computed<Info>(() => {
       out.main = me.value?.jeopardy?.isChooser ? 'Ваш выбор!' : `Выбирает: ${nameOf(j.chooserId)}`
     } else if (j.stage === 'question' && j.question) {
       const q = j.question
-      out.top = `${q.themeName} · ${q.price}`
+      out.top = `${q.themeName ?? `Вопрос ${q.number}`} · ${q.price}`
       if (q.step === 'special') {
-        out.main =
-          q.type === 'cat'
-            ? `Кот в мешке! Тема: «${q.catTheme}»`
-            : q.type === 'auction'
-              ? 'Вопрос-аукцион!'
-              : 'Вопрос без риска!'
+        out.main = q.type === 'cat' ? 'Кот в мешке!' : q.type === 'auction' ? 'Вопрос-аукцион!' : 'Вопрос без риска!'
+      } else if (q.step === 'reading') {
+        out.main = 'Слушайте вопрос'
       } else if (q.step === 'reveal') {
-        out.answer = q.answer
-      } else if (showQ) {
-        out.content = q.content
+        const right = q.attempts.find((a) => a.correct)
+        out.main = right ? `Верно: ${nameOf(right.competitorId)} +${right.delta}` : 'Вопрос не взят'
       }
       out.timer = q.step === 'buzzing' ? 'buzz' : q.step === 'answering' ? 'answer' : null
     } else if (j.stage === 'roundEnd') {
@@ -363,7 +354,6 @@ const info = computed<Info>(() => {
       const last = b.lastBattle
       out.top = `Бой №${last.no}: ${last.teams.map((id) => `${nameOf(id)} ${last.scores[id] ?? 0}`).join(' : ')}`
       out.main = last.winnerId ? `Победа: ${nameOf(last.winnerId)}` : 'Ничья'
-      out.answer = b.question?.answer ?? null
       return out
     }
     const bt = b.battle
@@ -378,11 +368,9 @@ const info = computed<Info>(() => {
     else if (b.stage === 'answering') out.main = 'Идёт ответ'
     else if (b.stage === 'reveal') {
       out.main = b.answeredBy ? `Верно ответили: ${nameOf(b.answeredBy)}` : 'Вопрос не взят'
-      out.answer = b.question?.answer ?? null
     } else if (b.stage === 'finished') {
       out.main = b.winnerId ? `Победитель турнира: ${nameOf(b.winnerId)}` : 'Итоги турнира'
     }
-    if (showQ && b.showQuestion && b.stage !== 'reveal') out.content = b.question?.content ?? null
     out.timer = b.stage === 'armed' || b.stage === 'answering' ? 'main' : null
   }
   return out
@@ -577,13 +565,6 @@ const pingClass = computed(() => {
       <section class="info">
         <div v-if="info.top" class="info-top">{{ info.top }}</div>
         <div v-if="info.main" class="info-main">{{ info.main }}</div>
-        <ContentView
-          v-if="info.content && !final"
-          :items="info.content"
-          variant="phone"
-          :allow-play="state?.settings.onlineMode ?? false"
-        />
-        <div v-if="info.answer" class="answer">Ответ: <b>{{ info.answer }}</b></div>
         <TimerBar v-if="activeTimer && !final" :timer="activeTimer" :now="now" />
       </section>
 
@@ -595,7 +576,6 @@ const pingClass = computed(() => {
           :title="jv?.format === 'khamsa' ? jv.rounds[jv.roundIndex]?.name || 'Хамса' : 'Финал'"
           :timer="state?.timers.final"
           :now="now"
-          :show-question="state?.settings.showQuestionOnPhones ?? true"
           @bet="sendBet"
           @answer="sendAnswer"
         />
@@ -798,9 +778,6 @@ const pingClass = computed(() => {
 .info-main {
   font-size: 1.25rem;
   font-weight: 800;
-}
-.answer {
-  font-size: 1.1rem;
 }
 .info :deep(.timer) {
   width: 100%;

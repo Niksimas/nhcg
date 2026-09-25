@@ -3,7 +3,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { apiRoot, setHostKey } from '../lib/api'
-import { formatCode, forgetRoom, myRooms, normalizeCode, ownerToken, rememberRoom, serverMeta, type MyRoom } from '../lib/room'
+import { formatCode, forgetRoom, myRooms, normalizeCode, rememberRoom, serverMeta, type MyRoom } from '../lib/room'
 import { plural } from '../lib/util'
 import Icon from '../components/Icon.vue'
 
@@ -57,7 +57,7 @@ async function create() {
   creating.value = true
   createError.value = ''
   try {
-    const res = await apiRoot<{ code: string; hostKey: string }>('POST', '/rooms', { ownerToken: ownerToken() })
+    const res = await apiRoot<{ code: string; hostKey: string }>('POST', '/rooms', {})
     setHostKey(res.hostKey, res.code)
     rememberRoom(res.code)
     await router.push(`/r/${res.code}/host`)
@@ -134,7 +134,7 @@ onMounted(async () => {
       <section class="card block">
         <h2>Провести игру</h2>
         <p class="muted">
-          Создайте комнату — вы станете ведущим. Выберите пакет вопросов, покажите игрокам код, и можно начинать.
+          Создайте комнату — вы станете ведущим. Покажите игрокам код и читайте вопросы со своего листа.
         </p>
         <button class="btn big host-btn" :disabled="creating" @click="create">
           <Icon name="plus" /> {{ creating ? 'Создаём…' : 'Создать комнату' }}
@@ -158,7 +158,7 @@ onMounted(async () => {
       <section class="how">
         <div class="step">
           <b>1</b>
-          <span>Ведущий создаёт комнату и выбирает пакет вопросов (есть готовые, можно загрузить свой или из SIGame).</span>
+          <span>Ведущий создаёт комнату и выбирает игру. Вопросы он читает со своего листа — программа ведёт кнопки, время и счёт.</span>
         </div>
         <div class="step">
           <b>2</b>

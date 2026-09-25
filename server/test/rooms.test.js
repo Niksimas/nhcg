@@ -5,18 +5,7 @@ import fs from 'node:fs'
 import fsp from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
-import {
-  RoomManager,
-  normalizeCode,
-  isValidCode,
-  libIdForOwner,
-  isValidLibId,
-  isLocalHostHeader,
-  originFromRequest,
-} from '../rooms.js'
-
-const builtinDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'demo-packs')
+import { RoomManager, normalizeCode, isValidCode, isLocalHostHeader, originFromRequest } from '../rooms.js'
 
 async function makeManager(overrides = {}) {
   const dataDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'quiz-rooms-'))
@@ -26,15 +15,12 @@ async function makeManager(overrides = {}) {
     port: 3000,
     maxRooms: 500,
     roomTtlHours: 12,
-    libraryQuotaMb: 500,
-    libraryTtlDays: 90,
-    storageQuotaMb: 10240,
     requireKey: false,
     publicUrl: null,
     tls: null,
     ...overrides,
   }
-  const manager = new RoomManager({ config, builtinDir })
+  const manager = new RoomManager({ config })
   return {
     manager,
     dataDir,
@@ -47,31 +33,22 @@ async function makeManager(overrides = {}) {
 
 const fakeReq = (ip, headers = {}) => ({ socket: { remoteAddress: ip }, headers })
 
-test('коды комнат и идентификаторы библиотек', () => {
+test('коды комнат', () => {
   assert.equal(normalizeCode(' 482 915 '), '482915')
   assert.equal(normalizeCode('48-29-15-99'), '482915')
   assert.ok(isValidCode('482915'))
   assert.ok(!isValidCode('48291'))
   assert.ok(!isValidCode('abcdef'))
-  const lib = libIdForOwner('секретный-токен-браузера')
-  assert.match(lib, /^[0-9a-f]{20}$/)
-  assert.equal(lib, libIdForOwner('секретный-токен-браузера'))
-  assert.notEqual(lib, libIdForOwner('другой-токен-браузера'))
-  assert.ok(isValidLibId(lib))
-  assert.ok(isValidLibId('local'))
-  assert.ok(!isValidLibId('../etc'))
 })
 
 test('создание, поиск, сохранение и удаление комнаты', async () => {
   const { manager, dataDir, cleanup } = await makeManager()
   try {
-    const room = await manager.create({ libId: libIdForOwner('владелец-1-xxxxxxxx') })
+    const room = await manager.create()
     assert.match(room.code, /^\d{6}$/)
     assert.match(room.hostKey, /^[A-Z2-9]{10}$/)
     assert.equal(manager.get(`${room.code.slice(0, 3)} ${room.code.slice(3)}`), room)
     assert.ok(fs.existsSync(path.join(dataDir, 'rooms', room.code, 'room.json')))
-    // Пакеты комнаты лежат в библиотеке её ведущего, а не в общей папке.
-    assert.equal(room.store.userDir, path.join(dataDir, 'libraries', room.libId, 'packs'))
     assert.equal(manager.serverInfo(room).joinUrl.endsWith(`/r/${room.code}`), true)
 
     assert.ok(manager.remove(room.code))
@@ -86,7 +63,7 @@ test('создание, поиск, сохранение и удаление к�
 test('в режиме одной игры комнаты создавать нельзя, а лимит комнат соблюдается', async () => {
   const local = await makeManager({ rooms: false })
   try {
-    await assert.rejects(local.manager.create({ libId: 'local' }), (err) => err.status === 403)
+    await assert.rejects(local.manager.create(), (err) => err.status === 403)
     const def = await local.manager.ensureDefaultRoom()
     assert.ok(def.isDefault)
     assert.equal(local.manager.roomPath(def), '/')
@@ -96,9 +73,9 @@ test('в режиме одной игры комнаты создавать не
   }
   const limited = await makeManager({ maxRooms: 2 })
   try {
-    await limited.manager.create({ libId: 'local' })
-    await limited.manager.create({ libId: 'local' })
-    await assert.rejects(limited.manager.create({ libId: 'local' }), (err) => err.status === 503)
+    await limited.manager.create()
+    await limited.manager.create()
+    await assert.rejects(limited.manager.create(), (err) => err.status === 503)
   } finally {
     await limited.cleanup()
   }
@@ -106,16 +83,15 @@ test('в режиме одной игры комнаты создавать не
 
 test('после перезапуска комнаты и игры восстанавливаются, старые — удаляются', async () => {
   const first = await makeManager()
-  const lib = libIdForOwner('владелец-2-xxxxxxxx')
-  const room = await first.manager.create({ libId: lib })
+  const room = await first.manager.create()
   room.game.join({ name: 'Аня' })
   room.game.saveNow()
-  const old = await first.manager.create({ libId: lib })
+  const old = await first.manager.create()
   old.lastActive = Date.now() - 13 * 3600_000
   old.saveMeta()
   // «Перезапуск»: новый менеджер на той же папке.
   first.manager.closeAll()
-  const second = new RoomManager({ config: first.manager.config, builtinDir })
+  const second = new RoomManager({ config: first.manager.config })
   try {
     await second.loadAll()
     const restored = second.get(room.code)
@@ -129,7 +105,7 @@ test('после перезапуска комнаты и игры восста�
     assert.ok(!fs.existsSync(path.join(first.dataDir, 'rooms', old.code)))
 
     // Та же папка в режиме одной игры не поднимает чужие комнаты.
-    const localManager = new RoomManager({ config: { ...first.manager.config, rooms: false }, builtinDir })
+    const localManager = new RoomManager({ config: { ...first.manager.config, rooms: false } })
     await localManager.loadAll()
     assert.equal(localManager.rooms.size, 0)
     localManager.closeAll()
@@ -142,8 +118,8 @@ test('после перезапуска комнаты и игры восста�
 test('неактивные комнаты без подключений удаляются при уборке', async () => {
   const { manager, cleanup } = await makeManager({ roomTtlHours: 1 })
   try {
-    const active = await manager.create({ libId: 'local' })
-    const stale = await manager.create({ libId: 'local' })
+    const active = await manager.create()
+    const stale = await manager.create()
     stale.lastActive = Date.now() - 2 * 3600_000
     assert.equal(manager.sweep(), 1)
     assert.ok(manager.get(active.code))
@@ -173,7 +149,6 @@ test('основная комната: постоянный ключ и пере
     assert.ok(fs.existsSync(path.join(dataDir, 'game-state.json.migrated')))
     assert.equal(room.game.player('p1')?.name, 'Старый игрок')
     assert.equal(room.game.score('p1'), 300)
-    assert.equal(room.store.userDir, path.join(dataDir, 'packs'))
   } finally {
     await cleanup()
   }
@@ -201,7 +176,7 @@ test('без ключа пускается только браузер само�
   }
   const rooms = await makeManager()
   try {
-    const room = await rooms.manager.create({ libId: 'local' })
+    const room = await rooms.manager.create()
     assert.ok(!rooms.manager.isTrustedLocal(fakeReq('127.0.0.1', { host: 'localhost:3000' }), room), 'в режиме комнат ключ нужен всегда')
   } finally {
     await rooms.cleanup()
@@ -211,7 +186,7 @@ test('без ключа пускается только браузер само�
 test('адрес для игроков: публичный адрес, выбранный ведущим, адрес из браузера ведущего', async () => {
   const { manager, cleanup } = await makeManager()
   try {
-    const room = await manager.create({ libId: 'local' })
+    const room = await manager.create()
     room.originHint = 'https://abc.trycloudflare.com'
     assert.equal(manager.serverInfo(room).joinUrl, `https://abc.trycloudflare.com/r/${room.code}`)
     room.game.updateSettings({ joinAddress: 'https://quiz.example.ru/' })
@@ -235,64 +210,22 @@ test('адрес для игроков: публичный адрес, выбр�
   assert.ok(!isLocalHostHeader('evil.example'))
 })
 
-test('забытые библиотеки пакетов удаляются, используемые — остаются', async () => {
-  const { manager, dataDir, cleanup } = await makeManager({ libraryTtlDays: 30 })
+test('старое сохранение комнаты с библиотекой пакетов поднимается', async () => {
+  const first = await makeManager()
+  const room = await first.manager.create()
+  room.game.join({ name: 'Аня' })
+  room.game.saveNow()
+  // Прежние версии хранили в описании комнаты библиотеку пакетов, а в игре — выбранный пакет.
+  const metaFile = path.join(first.dataDir, 'rooms', room.code, 'room.json')
+  fs.writeFileSync(metaFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(metaFile, 'utf8')), libId: 'local' }))
+  first.manager.closeAll()
+  const second = new RoomManager({ config: first.manager.config })
   try {
-    const active = await manager.create({ libId: libIdForOwner('владелец-5-xxxxxxxx') })
-    await active.store.create(null)
-    const oldLib = libIdForOwner('владелец-6-xxxxxxxx')
-    const old = await manager.create({ libId: oldLib })
-    await old.store.create(null)
-    manager.remove(old.code)
-    const later = Date.now() + 31 * 86400_000
-    assert.equal(manager.sweepLibraries(later), 1)
-    assert.ok(!fs.existsSync(path.join(dataDir, 'libraries', oldLib)))
-    assert.ok(fs.existsSync(path.join(dataDir, 'libraries', active.libId)), 'библиотека открытой комнаты не удаляется')
-    assert.equal(manager.sweepLibraries(Date.now()), 0)
+    await second.loadAll()
+    assert.equal(second.get(room.code)?.game.state.players[0].name, 'Аня')
   } finally {
-    await cleanup()
-  }
-})
-
-test('квота библиотеки пакетов ведущего', async () => {
-  const { manager, cleanup } = await makeManager({ libraryQuotaMb: 1 })
-  try {
-    const room = await manager.create({ libId: libIdForOwner('владелец-3-xxxxxxxx') })
-    const id = await room.store.create(null)
-    const big = path.join(os.tmpdir(), `quiz-big-${process.pid}.png`)
-    fs.writeFileSync(big, Buffer.alloc(1.5 * 1024 * 1024))
-    try {
-      await assert.rejects(room.store.addMedia(id, big, 'big.png'), /Не хватает места/)
-    } finally {
-      fs.rmSync(big, { force: true })
-    }
-    // В чужой библиотеке пакета нет.
-    const other = await manager.create({ libId: libIdForOwner('владелец-4-xxxxxxxx') })
-    assert.ok(!(await other.store.list()).some((p) => p.id === id))
-    assert.ok((await other.store.list()).some((p) => p.id === 'demo-svoya-igra'), 'встроенные пакеты видны всем')
-  } finally {
-    await cleanup()
-  }
-})
-
-test('общий лимит места под пакеты на сервере', async () => {
-  const { manager, cleanup } = await makeManager({ storageQuotaMb: 1, libraryQuotaMb: 500 })
-  try {
-    const room = await manager.create({ libId: libIdForOwner('владелец-7-xxxxxxxx') })
-    const id = await room.store.create(null)
-    const file = path.join(os.tmpdir(), `quiz-mid-${process.pid}.png`)
-    fs.writeFileSync(file, Buffer.alloc(700 * 1024))
-    try {
-      await room.store.addMedia(id, file, 'a.png')
-      fs.writeFileSync(file, Buffer.alloc(700 * 1024))
-      const other = await manager.create({ libId: libIdForOwner('владелец-8-xxxxxxxx') })
-      const id2 = await other.store.create(null)
-      await assert.rejects(other.store.addMedia(id2, file, 'b.png'), /закончилось место/)
-    } finally {
-      fs.rmSync(file, { force: true })
-    }
-  } finally {
-    await cleanup()
+    second.closeAll()
+    await fsp.rm(first.dataDir, { recursive: true, force: true })
   }
 })
 

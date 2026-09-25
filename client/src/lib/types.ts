@@ -4,23 +4,19 @@ export type Mode = 'jeopardy' | 'brainring' | 'khamsa'
 export type Role = 'host' | 'screen' | 'player'
 export type BuzzerStatus = 'test' | 'off' | 'closed' | 'armed' | 'collecting' | 'answering'
 
-export interface ContentItem {
-  type: 'text' | 'image' | 'audio' | 'video'
-  text?: string
-  src?: string
-}
-
 export interface Settings {
   teamMode: boolean
   allowPlayerTeams: boolean
   joinAddress: string
-  showQuestionOnPhones: boolean
   phoneSelect: boolean
-  hideAnswerOnHost: boolean
   onlineMode: boolean
   joinLocked: boolean
   jFormat: 'sport' | 'tv'
-  jPrices: 'x10' | 'x1' | 'x100' | 'pack'
+  jRounds: number
+  jThemes: number
+  jQuestions: number
+  jFinal: boolean
+  jPrices: 'x10' | 'x1' | 'x100'
   jTableMode: 'one' | 'team'
   jAssignRoundTime: number
   jAssignThemeTime: number
@@ -54,8 +50,6 @@ export interface Settings {
   brTotal: 'sum' | 'wins'
   brCarryOver: boolean
   brQuestionValue: number
-  brAutoShowQuestion: boolean
-  brShowAnswer: boolean
 }
 
 export interface PlayerInfo {
@@ -108,13 +102,6 @@ export interface BuzzerView {
   falseStarts: string[]
 }
 
-export interface PackInfo {
-  id: string
-  title: string
-  author: string
-  rounds: { name: string; type: 'normal' | 'final'; themes: number }[]
-}
-
 export type QType = 'normal' | 'cat' | 'auction' | 'norisk'
 export type QStep = 'special' | 'reading' | 'buzzing' | 'answering' | 'reveal'
 
@@ -124,21 +111,17 @@ export interface Attempt {
   delta: number
 }
 
+// Вопрос ведущий читает с листа: программа знает только тему, номер и стоимость.
 export interface JQuestion {
   id: string
-  themeName: string
+  // null — название темы скрыто от игроков (закрытый раунд)
+  themeName: string | null
+  number: number
   type: QType
   step: QStep
   basePrice: number
   price: number
   responderId: string | null
-  catTheme: string | null
-  catPriceOptions: number[] | null
-  catSelf: boolean | null
-  content: ContentItem[] | null
-  answer: string | null
-  answerContent: ContentItem[] | null
-  comment: string | null
   attempts: Attempt[]
 }
 
@@ -146,12 +129,13 @@ export interface JBoardCell {
   id: string
   price: number
   played: boolean
-  type?: QType
 }
 
 export interface JBoardTheme {
   // null — тема ещё не объявлена (полуоткрытый и закрытый раунды)
   name: string | null
+  // название вписал ведущий (иначе — «Тема N»)
+  named?: boolean
   hidden?: boolean
   current?: boolean
   // вычеркнута командами (четвёртый раунд «Хамсы»)
@@ -182,17 +166,14 @@ export interface JFinal {
   themeName: string | null
   participants: JFinalParticipant[]
   current: string | null
-  content: ContentItem[] | null
-  answer: string | null
-  answerContent: ContentItem[] | null
-  comment: string | null
-  answerShown: boolean
 }
 
 export interface JeopardyView {
   format: 'sport' | 'tv' | 'khamsa'
   stage: 'board' | 'assign' | 'strike' | 'theme' | 'question' | 'roundEnd' | 'final' | 'results'
   roundIndex: number
+  // ведущий может отметить кот в мешке, аукцион, вопрос без риска
+  specials: boolean
   rounds: { name: string; type: 'normal' | 'final'; complete: boolean; skip: boolean; kind: RoundKind | null }[]
   chooserId: string | null
   kind: RoundKind | null
@@ -252,10 +233,8 @@ export interface BrStanding {
 export interface BrainRingView {
   stage: 'idle' | 'reading' | 'armed' | 'answering' | 'reveal' | 'battleEnd' | 'finished'
   qIndex: number
-  total: number | null
   value: number
   carry: number
-  showQuestion: boolean
   answeredBy: string | null
   winnerId: string | null
   history: BrHistoryItem[]
@@ -264,14 +243,6 @@ export interface BrainRingView {
   battles: BrBattleResult[]
   standings: BrStanding[]
   nextPair: string[] | null
-  question: {
-    themeName: string
-    content: ContentItem[] | null
-    answer: string | null
-    answerContent: ContentItem[] | null
-    comment: string | null
-  } | null
-  list: { themeName: string; preview: string }[] | null
 }
 
 export interface ServerInfo {
@@ -301,7 +272,6 @@ export interface GameState {
   competitors: Competitor[]
   buzzer: BuzzerView
   timers: Record<string, TimerState>
-  pack: PackInfo | null
   jeopardy: JeopardyView | null
   brainring: BrainRingView | null
   joinUrl: string
@@ -360,50 +330,4 @@ export interface GameEvent {
   name: string
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any
-}
-
-export interface PackSummary {
-  id: string
-  title: string
-  author: string
-  description: string
-  builtin: boolean
-  rounds: { name: string; type: 'normal' | 'final'; themes: number }[]
-  questions: number
-  media: number
-  updatedAt: number
-}
-
-// Полный пакет (редактор)
-export interface PackQuestion {
-  price: number
-  type: QType
-  content: ContentItem[]
-  answer: string
-  answerContent: ContentItem[]
-  comment: string
-  catTheme?: string
-  catPrice?: number
-  catPriceOptions?: number[]
-  catSelf?: boolean
-}
-
-export interface PackTheme {
-  name: string
-  questions: PackQuestion[]
-}
-
-export interface PackRound {
-  name: string
-  type: 'normal' | 'final'
-  themes: PackTheme[]
-}
-
-export interface Pack {
-  id?: string
-  builtin?: boolean
-  title: string
-  author: string
-  description: string
-  rounds: PackRound[]
 }

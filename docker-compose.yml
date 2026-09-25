@@ -14,9 +14,6 @@ services:
       TRUST_PROXY: '1'
       MAX_ROOMS: ${MAX_ROOMS:-500}
       ROOM_TTL_HOURS: ${ROOM_TTL_HOURS:-12}
-      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-100}
-      LIBRARY_QUOTA_MB: ${LIBRARY_QUOTA_MB:-500}
-      STORAGE_QUOTA_MB: ${STORAGE_QUOTA_MB:-10240}
     volumes:
       - quiz-data:/data
 

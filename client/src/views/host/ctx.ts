@@ -9,8 +9,8 @@ export interface HostCtx {
   run: (name: string, args?: Record<string, unknown>) => Promise<boolean>
   toast: (text: string, kind?: 'ok' | 'err') => void
   flash: Record<string, number>
-  openPacks: () => void
   openJoin: () => void
+  openSettings: () => void
 }
 
 const KEY: InjectionKey<HostCtx> = Symbol('host')

@@ -35,10 +35,8 @@ export class Game extends EventEmitter {
     super()
     this.now = opts.clock ?? (() => performance.now())
     this.timerApi = opts.timers ?? { setTimeout, clearTimeout }
-    this.packStore = opts.packStore ?? null
     this.persist = opts.persist ?? null
     this.saveDelay = opts.saveDelay ?? 400
-    this.pack = null
     this.state = Game.initialState()
     this.modes = { jeopardy: new JeopardyMode(this), brainring: new BrainRingMode(this), khamsa: new KhamsaMode(this) }
     this.undoStack = []
@@ -58,7 +56,6 @@ export class Game extends EventEmitter {
       players: [],
       teams: [],
       scores: {},
-      packId: null,
       buzzer: freshBuzzer('test'),
       timers: {},
       jeopardy: JeopardyMode.initialState(),
@@ -674,52 +671,6 @@ export class Game extends EventEmitter {
     this.changed()
   }
 
-  // ───────────────────────────── пакеты ─────────────────────────────
-
-  async loadPack(packId) {
-    if (!this.packStore) throw new GameError('Хранилище пакетов недоступно')
-    const pack = await this.packStore.loadForGame(packId)
-    this.pack = pack
-    this.state.packId = pack.id
-    this.undoStack = []
-    this.modes.jeopardy.reset()
-    this.modes.brainring.reset()
-    this.modes.khamsa.reset()
-    if (this.state.stage === 'game') this.mode.start()
-    this.log(`Загружен пакет «${pack.title}»`)
-    this.changed()
-    return pack
-  }
-
-  // Перечитать текущий пакет после правки в редакторе. Если структура (раунды/темы/число вопросов)
-  // не изменилась — прогресс игры сохраняется, иначе пакет загружается заново.
-  async refreshPack() {
-    if (!this.state.packId || !this.packStore) return
-    const pack = await this.packStore.loadForGame(this.state.packId)
-    const shape = (p) => p.rounds.map((r) => `${r.type}:${r.themes.map((t) => t.questions.length).join(',')}`).join('|')
-    if (this.pack && shape(this.pack) === shape(pack)) {
-      this.pack = pack
-      this.changed()
-    } else {
-      await this.loadPack(this.state.packId)
-    }
-  }
-
-  unloadPack() {
-    this.pack = null
-    this.state.packId = null
-    this.undoStack = []
-    this.modes.jeopardy.reset()
-    this.modes.brainring.reset()
-    this.modes.khamsa.reset()
-    if (this.state.stage === 'game') {
-      this.state.stage = 'lobby'
-      this.setBuzzer('test')
-      this.stopTimers()
-    }
-    this.changed()
-  }
-
   // ───────────────────────────── ход игры ─────────────────────────────
 
   startGame() {
@@ -778,8 +729,9 @@ export class Game extends EventEmitter {
     const clean = sanitizeSettings(patch)
     const changed = (key) => key in clean && clean[key] !== this.settings[key]
     const teamModeChanged = changed('teamMode')
-    // Формат «Своей игры» и порядок игры за столом меняют сам ход раунда — начинаем текущий раунд заново.
-    const formatChanged = changed('jFormat') || changed('jTableMode')
+    // Формат «Своей игры», её скелет и порядок игры за столом меняют сам ход раунда — начинаем текущий раунд заново
+    // (сыгранные вопросы, которые остались в новом скелете, так и считаются сыгранными).
+    const formatChanged = ['jFormat', 'jTableMode', 'jRounds', 'jThemes', 'jQuestions', 'jFinal'].some(changed)
     Object.assign(this.state.settings, clean)
     if (teamModeChanged) {
       // Прежние участники кнопки (игроки ↔ команды) больше не существуют.
@@ -790,6 +742,7 @@ export class Game extends EventEmitter {
     } else if (formatChanged && this.state.stage === 'game' && this.state.mode === 'jeopardy') {
       this.stopTimers()
       this.undoStack = []
+      this.mode.sanitize()
       this.mode.start()
     }
   }
@@ -917,19 +870,6 @@ export class Game extends EventEmitter {
       if (isObj(saved.khamsa)) s.khamsa = { ...s.khamsa, ...saved.khamsa }
       this.state = s
       for (const t of s.teams) this.fixCaptain(t.id)
-      if (typeof saved.packId === 'string' && this.packStore) {
-        try {
-          this.pack = await this.packStore.loadForGame(saved.packId)
-          s.packId = this.pack.id
-        } catch {
-          this.pack = null
-          s.packId = null
-          s.jeopardy = JeopardyMode.initialState()
-          s.brainring = BrainRingMode.initialState()
-          s.khamsa = KhamsaMode.initialState()
-          if (s.stage === 'game' && s.mode !== 'brainring') s.stage = 'lobby'
-        }
-      }
       this.modes.jeopardy.sanitize()
       this.modes.brainring.sanitize()
       this.modes.khamsa.sanitize()
@@ -939,7 +879,6 @@ export class Game extends EventEmitter {
     } catch (err) {
       console.error('Сохранённое состояние повреждено, начинаем заново:', err.message)
       this.state = Game.initialState()
-      this.pack = null
       return false
     }
   }
@@ -957,8 +896,6 @@ const HOST_COMMANDS = {
   undo: (g) => g.undo(),
   'settings.update': (g, a) => g.updateSettings(a.patch),
   'mode.set': (g, a) => g.setMode(a.mode),
-  'pack.load': (g, a) => g.loadPack(String(a.packId ?? '')),
-  'pack.unload': (g) => g.unloadPack(),
   'game.start': (g) => g.startGame(),
   'game.lobby': (g) => g.toLobby(),
   'game.reset': (g, a) => g.resetGame({ keepPlayers: a.keepPlayers !== false }),
@@ -1031,9 +968,5 @@ const HOST_COMMANDS = {
     g.log(`Блокировка снята: ${c.name}`)
   },
 
-  media: (g, a) => {
-    const action = ['play', 'pause', 'replay'].includes(a.action) ? a.action : 'replay'
-    g.emitEvent('media', { action })
-  },
   'sound.test': (g) => g.emitEvent('soundTest'),
 }

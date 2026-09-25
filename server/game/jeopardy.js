@@ -8,14 +8,18 @@
 //   закрытый     — капитаны заранее ставят игроков на темы, не зная их названий;
 //   командирский — тему играют капитаны команд.
 // Телевизионный — как в передаче: табло тем и цен, спецвопросы (кот в мешке, аукцион, без риска), финал со ставками.
+//
+// Вопросы ведущий читает с листа (например, из документа Word), поэтому программа знает только «скелет» игры:
+// сколько раундов, тем и вопросов и сколько стоит каждый вопрос. Скелет строится из настроек; названия тем
+// ведущий может вписать сам, а спецвопрос — отметить, когда дойдёт до него в своём листе.
 
 import { GameError, cleanText } from './util.js'
 
 const Q_TYPES = ['normal', 'cat', 'auction', 'norisk']
 const TYPE_LABEL = { cat: 'кот в мешке', auction: 'аукцион', norisk: 'вопрос без риска' }
-const CONTENT_STEPS = ['reading', 'buzzing', 'answering', 'reveal']
 export const KINDS = ['open', 'semi', 'closed', 'captain']
 export const KIND_LABEL = { open: 'открытый', semi: 'полуоткрытый', closed: 'закрытый', captain: 'командирский' }
+const KIND_ROUND_NAME = { open: 'Открытый раунд', semi: 'Полуоткрытый раунд', closed: 'Закрытый раунд', captain: 'Командирский раунд' }
 const PRICE_STEP = { x10: 10, x1: 1, x100: 100 }
 const STAGES = ['board', 'assign', 'strike', 'theme', 'question', 'roundEnd', 'final', 'results']
 
@@ -41,7 +45,8 @@ export class JeopardyMode {
       'j.final.close': () => this.finalClose(),
       'j.final.show': (a) => this.finalShow(a.competitorId),
       'j.final.judge': (a) => this.finalJudge(a.competitorId, a.correct === true),
-      'j.final.answer': () => this.finalShowAnswer(),
+      'j.special': (a) => this.markSpecial(a.type),
+      'j.theme.name': (a) => this.renameTheme(Number(a.round), Number(a.theme), a.name),
       // спортивный формат
       'j.theme': (a) => this.startTheme(Number(a.index)),
       'j.next': () => this.next(),
@@ -65,6 +70,7 @@ export class JeopardyMode {
       kinds: {}, // вид раунда, выбранный ведущим: номер раунда → open | semi | closed | captain
       assign: {}, // кто играет тему: номер раунда → команда → номер темы → игрок
       phase: null, // выбор игроков капитанами: { scope: 'round' | 'theme', themes: [...], ready: [командыготовы] }
+      names: {}, // названия тем, вписанные ведущим: номер раунда → номер темы → название
     }
   }
 
@@ -76,8 +82,68 @@ export class JeopardyMode {
     return this.game.settings
   }
 
+  // Скелет игры (раунды → темы → вопросы со стоимостью). Пересобирается, только когда меняются настройки
+  // или названия тем.
   rounds() {
-    return this.game.pack?.rounds ?? []
+    const key = this.structureKey()
+    if (this.struct?.key !== key) this.struct = { key, rounds: this.buildRounds() }
+    return this.struct.rounds
+  }
+
+  structureKey() {
+    const st = this.settings
+    return JSON.stringify([st.jFormat, st.jRounds, st.jThemes, st.jQuestions, st.jFinal, this.s.kinds, this.s.names])
+  }
+
+  themeName(ri, ti, fallback) {
+    const name = this.s.names?.[ri]?.[ti]
+    return typeof name === 'string' && name ? name : fallback
+  }
+
+  buildTheme(ri, ti, count, priceOf) {
+    return {
+      name: this.themeName(ri, ti, `Тема ${ti + 1}`),
+      named: !!this.s.names?.[ri]?.[ti],
+      questions: Array.from({ length: count }, (_, qi) => ({ price: priceOf(qi), type: 'normal' })),
+    }
+  }
+
+  buildRounds() {
+    const st = this.settings
+    const sport = st.jFormat === 'sport'
+    const rounds = []
+    const seen = {}
+    for (let ri = 0; ri < st.jRounds; ri++) {
+      let name = `Раунд ${ri + 1}`
+      if (sport) {
+        // В спортивном формате раунд называется по виду: открытый, полуоткрытый, закрытый, командирский.
+        const kind = KINDS.includes(this.s.kinds?.[ri]) ? this.s.kinds[ri] : KINDS[ri % KINDS.length]
+        seen[kind] = (seen[kind] ?? 0) + 1
+        name = seen[kind] > 1 ? `${KIND_ROUND_NAME[kind]} ${seen[kind]}` : KIND_ROUND_NAME[kind]
+      }
+      const themes = Array.from({ length: st.jThemes }, (_, ti) => this.buildTheme(ri, ti, st.jQuestions, (qi) => (qi + 1) * 100 * (ri + 1)))
+      rounds.push({ name, type: 'normal', themes })
+    }
+    // Финал со ставками — только в телевизионном формате.
+    if (!sport && st.jFinal) {
+      const ri = rounds.length
+      rounds.push({ name: 'Финал', type: 'final', themes: [this.buildTheme(ri, 0, 1, () => 0)] })
+      rounds[ri].themes[0].name = this.themeName(ri, 0, 'Финал')
+    }
+    return rounds
+  }
+
+  // Ведущий вписывает название темы из своего листа (пустое название — вернуть «Тема N»).
+  renameTheme(ri, ti, name) {
+    const theme = this.rounds()[ri]?.themes[ti]
+    if (!theme) throw new GameError('Тема не найдена')
+    const clean = cleanText(name, 60)
+    const names = this.s.names ?? (this.s.names = {})
+    const row = names[ri] ?? (names[ri] = {})
+    if (clean) row[ti] = clean
+    else delete row[ti]
+    if (!Object.keys(row).length) delete names[ri]
+    return true
   }
 
   round(i = this.s.roundIndex) {
@@ -91,9 +157,10 @@ export class JeopardyMode {
   // Проверка состояния после восстановления из файла.
   sanitize() {
     const s = this.s
-    if (!this.game.pack) {
-      this.reset()
-      return
+    s.names = isPlainObject(s.names) ? s.names : {}
+    for (const [ri, row] of Object.entries(s.names)) {
+      if (!isPlainObject(row)) delete s.names[ri]
+      else for (const [ti, name] of Object.entries(row)) if (typeof name !== 'string' || !name) delete row[ti]
     }
     if (!Number.isInteger(s.roundIndex) || !this.round(s.roundIndex)) s.roundIndex = 0
     s.played = Array.isArray(s.played) ? s.played.filter((id) => this.find(id)) : []
@@ -147,9 +214,7 @@ export class JeopardyMode {
   }
 
   canStart() {
-    if (!this.game.pack) return 'Сначала выберите пакет вопросов'
-    if (!this.rounds().length) return 'В пакете нет раундов'
-    if (!this.playableRounds().length) return 'В пакете нет обычных раундов с темами'
+    if (!this.playableRounds().length) return 'В игре нет раундов — проверьте настройки'
     return null
   }
 
@@ -159,7 +224,7 @@ export class JeopardyMode {
     return this.settings.jFormat === 'sport'
   }
 
-  // В спортивном формате финальные раунды пакетов SIGame (одна тема со ставками) не играются.
+  // Финальный раунд со ставками играется только в телевизионном формате.
   playable(ri) {
     const r = this.round(ri)
     return !!r && (!this.isSport() || r.type !== 'final')
@@ -192,13 +257,13 @@ export class JeopardyMode {
   priceOf(ri, ti, qi) {
     const q = this.rounds()[ri]?.themes[ti]?.questions[qi]
     if (!q) return 0
-    if (!this.isSport() || this.settings.jPrices === 'pack') return q.price
+    if (!this.isSport()) return q.price
     return (qi + 1) * PRICE_STEP[this.settings.jPrices]
   }
 
-  qTypeOf(question) {
-    if (this.isSport() && !this.settings.jSpecials) return 'normal'
-    return Q_TYPES.includes(question.type) ? question.type : 'normal'
+  // Спецвопросы (кот в мешке, аукцион, без риска): в телевизионном формате всегда, в спортивном — если включены.
+  specialsAllowed() {
+    return !this.isSport() || this.settings.jSpecials
   }
 
   themeQuestionIds(ri, ti) {
@@ -506,7 +571,7 @@ export class JeopardyMode {
     return list.find((c) => this.game.score(c.id) === min).id
   }
 
-  // Вызывается при старте игры, смене режима или загрузке пакета.
+  // Вызывается при старте игры, смене режима или формата игры.
   start() {
     const s = this.s
     if (!s.chooserId || !this.game.competitor(s.chooserId)) s.chooserId = this.randomCompetitor()
@@ -565,23 +630,33 @@ export class JeopardyMode {
     this.game.pushUndo('Выбор вопроса')
     if (!s.played.includes(id)) s.played.push(id)
     if (sport) s.themeIndex = f.ti
-    const type = this.qTypeOf(f.question)
     const base = this.priceOf(f.ri, f.ti, f.qi)
     s.stage = 'question'
-    s.q = {
-      id,
-      type,
-      basePrice: base,
-      price: type === 'cat' && Number.isFinite(f.question.catPrice) ? f.question.catPrice : base,
-      step: type === 'normal' ? 'reading' : 'special',
-      responderId: null,
-      attempts: [],
-    }
+    s.q = { id, type: 'normal', basePrice: base, price: base, step: 'reading', responderId: null, attempts: [] }
     this.game.stopTimers()
-    if (type === 'normal') this.game.openBuzzer()
-    else this.game.setBuzzer('off')
-    this.game.log(`Вопрос: «${f.theme.name}» за ${base}${type !== 'normal' ? ` — ${TYPE_LABEL[type]}` : ''}`)
-    this.game.emitEvent('questionSelected', { id, type })
+    this.game.openBuzzer()
+    this.game.log(`Вопрос: «${f.theme.name}» за ${base}`)
+    this.game.emitEvent('questionSelected', { id, type: 'normal' })
+    return true
+  }
+
+  // Ведущий дошёл в своём листе до спецвопроса и отмечает его, пока кнопки ещё не открыты.
+  markSpecial(type) {
+    const s = this.s
+    const q = s.q
+    if (!Q_TYPES.includes(type) || type === 'normal') throw new GameError('Неизвестный вид вопроса')
+    if (!this.specialsAllowed()) throw new GameError('Спецвопросы выключены в настройках')
+    if (s.stage !== 'question' || !q || q.step !== 'reading' || q.type !== 'normal') {
+      throw new GameError('Спецвопрос отмечают до того, как открыты кнопки')
+    }
+    this.game.pushUndo(`Спецвопрос: ${TYPE_LABEL[type]}`)
+    q.type = type
+    q.step = 'special'
+    q.responderId = null
+    this.game.stopTimers()
+    this.game.setBuzzer('off')
+    this.game.log(`Спецвопрос: ${TYPE_LABEL[type]}`)
+    this.game.emitEvent('questionSelected', { id: q.id, type })
     return true
   }
 
@@ -777,7 +852,6 @@ export class JeopardyMode {
       results: {},
       shown: [],
       current: null,
-      answerShown: false,
     }
   }
 
@@ -788,11 +862,10 @@ export class JeopardyMode {
     return f
   }
 
-  finalQuestionData() {
+  finalTheme() {
     const f = this.s.final
     if (!f || f.themeIndex == null) return null
-    const theme = this.round()?.themes[f.themeIndex]
-    return theme ? { theme, question: theme.questions[0] } : null
+    return this.round()?.themes[f.themeIndex] ?? null
   }
 
   finalRemoveTheme(index) {
@@ -845,7 +918,7 @@ export class JeopardyMode {
 
   finalQuestion() {
     const f = this.needFinal('bets')
-    if (!this.finalQuestionData()) throw new GameError('Не выбрана тема финала')
+    if (!this.finalTheme()) throw new GameError('Не выбрана тема финала')
     this.game.pushUndo('Вопрос финала')
     f.step = 'question'
     this.game.startTimer('final', this.settings.jFinalTime)
@@ -886,13 +959,6 @@ export class JeopardyMode {
     if (!f.shown.includes(competitorId)) f.shown.push(competitorId)
     this.game.log(`Финал, ${name}: ${correct ? 'верно' : 'неверно'} (${correct ? '+' : '−'}${bet})`)
     this.game.emitEvent(correct ? 'correct' : 'wrong', { competitorId, delta: correct ? bet : -bet })
-    return true
-  }
-
-  finalShowAnswer() {
-    const f = this.needFinal('reveal')
-    f.answerShown = true
-    this.game.emitEvent('reveal')
     return true
   }
 
@@ -973,8 +1039,8 @@ export class JeopardyMode {
   view(role) {
     const s = this.s
     const host = role === 'host'
-    const pack = this.game.pack
-    if (!pack) return null
+    const rounds = this.rounds()
+    if (!rounds.length) return null
     const r = this.round()
     const ri = s.roundIndex
     const sport = this.isSport()
@@ -982,7 +1048,8 @@ export class JeopardyMode {
       format: sport ? 'sport' : 'tv',
       stage: s.stage,
       roundIndex: ri,
-      rounds: pack.rounds.map((round, i) => ({
+      specials: this.specialsAllowed(),
+      rounds: rounds.map((round, i) => ({
         name: round.name,
         type: round.type,
         complete: round.type === 'final' ? false : this.roundComplete(i),
@@ -999,12 +1066,12 @@ export class JeopardyMode {
               const visible = this.themeVisible(ri, ti)
               return {
                 name: host || visible ? t.name : null,
+                named: t.named,
                 hidden: !visible,
                 current: sport && ti === s.themeIndex,
-                questions: t.questions.map((q, qi) => {
+                questions: t.questions.map((_, qi) => {
                   const id = `${ri}:${ti}:${qi}`
-                  const type = host ? this.qTypeOf(q) : undefined
-                  return { id, price: this.priceOf(ri, ti, qi), played: s.played.includes(id), type }
+                  return { id, price: this.priceOf(ri, ti, qi), played: s.played.includes(id) }
                 }),
               }
             })
@@ -1070,24 +1137,16 @@ export class JeopardyMode {
     if (this.s.stage !== 'question' || !q) return null
     const f = this.find(q.id)
     if (!f) return null
-    const src = f.question
-    const contentVisible = host || CONTENT_STEPS.includes(q.step)
-    const revealed = q.step === 'reveal'
+    const visible = host || this.themeVisible(f.ri, f.ti)
     return {
       id: q.id,
-      themeName: f.theme.name,
+      themeName: visible ? f.theme.name : null,
+      number: f.qi + 1,
       type: q.type,
       step: q.step,
       basePrice: q.basePrice,
       price: q.price,
       responderId: q.responderId,
-      catTheme: q.type === 'cat' ? src.catTheme || f.theme.name : null,
-      catPriceOptions: q.type === 'cat' ? src.catPriceOptions ?? null : null,
-      catSelf: q.type === 'cat' ? !!src.catSelf : null,
-      content: contentVisible ? src.content : null,
-      answer: host || revealed ? src.answer : null,
-      answerContent: host || revealed ? src.answerContent : null,
-      comment: host ? src.comment || null : null,
       attempts: q.attempts,
     }
   }
@@ -1095,13 +1154,11 @@ export class JeopardyMode {
   finalView(host) {
     const f = this.s.final
     if (this.s.stage !== 'final' || !f) return null
-    const data = this.finalQuestionData()
-    const showQuestion = host || f.step === 'question' || f.step === 'reveal'
-    const showAnswer = host || f.answerShown
+    const theme = this.finalTheme()
     return {
       step: f.step,
       themes: f.themes,
-      themeName: data?.theme.name ?? null,
+      themeName: theme?.name ?? null,
       participants: f.participants.map((cid) => {
         const open = host || f.shown.includes(cid)
         return {
@@ -1115,11 +1172,6 @@ export class JeopardyMode {
         }
       }),
       current: f.current,
-      content: showQuestion && data ? data.question.content : null,
-      answer: showAnswer && data ? data.question.answer : null,
-      answerContent: showAnswer && data ? data.question.answerContent : null,
-      comment: host && data ? data.question.comment || null : null,
-      answerShown: f.answerShown,
     }
   }
 

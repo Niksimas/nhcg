@@ -126,7 +126,7 @@ export class Hub {
   }
 
   reportError(client, err, msg) {
-    const known = err instanceof GameError || err?.name === 'PackError'
+    const known = err instanceof GameError
     if (!known) console.error('Ошибка обработки сообщения', msg?.t, err)
     const message = known ? err.message : 'Внутренняя ошибка сервера'
     if (msg && msg.id !== undefined) this.send(client, { t: 'ack', id: msg.id, ok: false, error: message })

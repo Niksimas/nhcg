@@ -1,9 +1,9 @@
 <script setup lang="ts">
+// Экран для зрителей: «Своя игра» и «Хамса». Вопросы ведущий читает вслух — на экране тема, цена и ход вопроса.
 import { computed } from 'vue'
 import type { GameState, JeopardyView } from '../../lib/types'
 import { competitorMap, fmtScore, textOn } from '../../lib/util'
 import BoardGrid from '../../components/BoardGrid.vue'
-import ContentView from '../../components/ContentView.vue'
 import ScoreStrip from '../../components/ScoreStrip.vue'
 import TimerBar from '../../components/TimerBar.vue'
 import { kindSuffix } from '../../lib/rules'
@@ -13,8 +13,6 @@ const props = defineProps<{
   j: JeopardyView
   now: number
   flash: Record<string, number>
-  replayKey: number
-  mediaPaused: boolean
 }>()
 
 const comps = computed(() => competitorMap(props.state))
@@ -24,7 +22,6 @@ const scoreOf = (id: string) => comps.value.get(id)?.score ?? 0
 const round = computed(() => props.j.rounds[props.j.roundIndex])
 const q = computed(() => props.j.question)
 const answering = computed(() => (q.value?.step === 'answering' ? q.value.responderId : null))
-const mediaPlaying = computed(() => !props.mediaPaused && (q.value?.step === 'reading' || q.value?.step === 'buzzing'))
 const questionTimer = computed(() =>
   q.value?.step === 'buzzing' ? props.state.timers.buzz : q.value?.step === 'answering' ? props.state.timers.answer : undefined,
 )
@@ -171,9 +168,8 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
         <div class="special-icon">{{ SPECIAL[q.type]?.icon }}</div>
         <div class="special-title">{{ SPECIAL[q.type]?.title }}</div>
         <div v-if="q.type === 'cat'" class="special-sub">
-          Тема: <b>{{ q.catTheme }}</b><br />
-          Стоимость: <b class="nums">{{ q.catPriceOptions ? q.catPriceOptions.join(' / ') : q.price }}</b>
-          <div class="muted">Игрок, выбравший вопрос, отдаёт его другому</div>
+          Игрок, выбравший вопрос, отдаёт его другому.<br />
+          Стоимость: <b class="nums">{{ q.price }}</b>
         </div>
         <div v-else-if="q.type === 'auction'" class="special-sub">
           Игроки торгуются за право ответить.<br />Минимальная ставка — <b class="nums">{{ q.basePrice }}</b>
@@ -182,20 +178,7 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
       </div>
 
       <div v-else class="q-body" :class="{ glow: q.step === 'buzzing' }">
-        <template v-if="q.step !== 'reveal'">
-          <ContentView :items="q.content" variant="screen" :playing="mediaPlaying" :replay-key="replayKey" />
-        </template>
-        <template v-else>
-          <div class="answer-label">Правильный ответ</div>
-          <div class="answer">{{ q.answer || '—' }}</div>
-          <ContentView v-if="q.answerContent?.length" :items="q.answerContent" variant="screen" :playing="true" />
-          <div v-if="rightAttempt" class="right-by" :style="{ '--c': colorOf(rightAttempt.competitorId) }">
-            {{ nameOf(rightAttempt.competitorId) }}: +{{ rightAttempt.delta }}
-          </div>
-        </template>
-      </div>
-
-      <div class="q-status">
+        <div class="q-number">Вопрос {{ q.number }} · <span class="nums">{{ q.price }}</span></div>
         <div
           v-if="answering"
           class="responder"
@@ -203,7 +186,17 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
         >
           Отвечает: {{ nameOf(answering) }}
         </div>
-        <div v-else-if="q.step === 'buzzing'" class="go">Жмите на кнопку!</div>
+        <div v-else-if="q.step === 'reading'" class="q-state">Слушайте вопрос</div>
+        <div v-else-if="q.step === 'buzzing'" class="q-state go">Жмите на кнопку!</div>
+        <template v-else-if="q.step === 'reveal'">
+          <div v-if="rightAttempt" class="right-by" :style="{ '--c': colorOf(rightAttempt.competitorId) }">
+            {{ nameOf(rightAttempt.competitorId) }}: +{{ rightAttempt.delta }}
+          </div>
+          <div v-else class="q-state muted">Вопрос не взят</div>
+        </template>
+      </div>
+
+      <div class="q-status">
         <div v-if="wrongAttempts.length && q.step !== 'reveal'" class="wrongs">
           <span v-for="(a, i) in wrongAttempts" :key="i" class="wrong">✗ {{ nameOf(a.competitorId) }}</span>
         </div>
@@ -229,12 +222,8 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
         <div class="final-theme-name">{{ final.themeName }}</div>
         <div v-if="final.step === 'bets'" class="final-status">Участники делают ставки</div>
         <div v-else-if="final.step === 'question'" class="final-q">
-          <ContentView :items="final.content" variant="screen" :playing="!mediaPaused" :replay-key="replayKey" />
+          <div class="final-status">Слушайте вопрос — ответ пишите на телефоне</div>
           <TimerBar :timer="state.timers.final" :now="now" big :warn-at="10000" />
-        </div>
-        <div v-if="final.step === 'reveal' && final.answerShown" class="final-answer">
-          Правильный ответ: <b>{{ final.answer }}</b>
-          <ContentView v-if="final.answerContent?.length" :items="final.answerContent" variant="screen" :playing="true" />
         </div>
         <div class="final-players">
           <div
@@ -500,27 +489,36 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
     0 0 0 4px rgba(34, 197, 94, 0.75),
     0 0 70px rgba(34, 197, 94, 0.35);
 }
-.answer-label {
-  font-size: clamp(1rem, 1.8vw, 1.8rem);
+.q-number {
+  font-size: clamp(1.1rem, 2.2vw, 2.2rem);
+  font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
-.answer {
-  font-size: clamp(2rem, 5vw, 5rem);
+.q-state {
+  font-size: clamp(2.4rem, min(7vw, 12vh), 7rem);
   font-weight: 800;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
   text-align: center;
-  color: var(--accent);
-  animation: pop 0.45s ease;
+  line-height: 1.05;
+  animation: pop 0.4s ease;
+}
+.q-state.go {
+  color: var(--ok);
+  animation: pulse 0.9s ease-in-out infinite;
+}
+.q-state.muted {
+  color: var(--faint);
 }
 .right-by {
-  font-size: clamp(1.2rem, 2.2vw, 2.2rem);
+  font-size: clamp(2rem, min(5vw, 9vh), 5rem);
   font-weight: 800;
-  padding: 0.2em 0.8em;
+  padding: 0.2em 0.9em;
   border-radius: 99px;
-  border: 3px solid var(--c);
-  background: color-mix(in srgb, var(--c) 10%, var(--panel));
+  border: 4px solid var(--c);
+  background: color-mix(in srgb, var(--c) 12%, var(--panel));
+  animation: pop 0.45s ease;
 }
 .special {
   flex: 1;
@@ -563,19 +561,15 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .responder {
   padding: 0.3em 1em;
-  border-radius: 16px;
+  border-radius: 22px;
   background: var(--c);
   color: var(--t);
-  font-size: clamp(1.3rem, 2.8vw, 2.8rem);
+  font-size: clamp(2rem, min(5.5vw, 10vh), 5.5rem);
   font-weight: 800;
-  box-shadow: 0 14px 30px -14px var(--c);
+  letter-spacing: -0.01em;
+  text-align: center;
+  box-shadow: 0 18px 40px -16px var(--c);
   animation: pop 0.35s ease;
-}
-.go {
-  font-size: clamp(1.3rem, 2.6vw, 2.6rem);
-  font-weight: 800;
-  color: var(--ok);
-  animation: pulse 0.9s ease-in-out infinite;
 }
 .wrongs {
   display: flex;
@@ -645,13 +639,6 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
   flex-direction: column;
   justify-content: center;
   gap: 3vh;
-}
-.final-answer {
-  text-align: center;
-  font-size: clamp(1.5rem, 3.2vw, 3.2rem);
-}
-.final-answer b {
-  color: var(--accent);
 }
 .final-players {
   display: flex;

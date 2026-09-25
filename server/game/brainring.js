@@ -3,7 +3,7 @@
 // После неверного ответа соперники получают оставшееся время (по умолчанию не меньше 20 секунд).
 // Кто взял больше вопросов в бою — побеждает и получает турнирные очки (по умолчанию +1).
 // Счёт турнира сквозной: взятые во всех боях вопросы плюс очки за победы (или только очки за победы).
-// Можно играть без пакета: ведущий читает вопросы с листа, программа — кнопки, таймер и таблица.
+// Вопросы ведущий читает с листа, программа ведёт кнопки, таймер, счёт боя и таблицу турнира.
 
 import { GameError } from './util.js'
 
@@ -13,13 +13,10 @@ const STAGES = ['idle', 'reading', 'armed', 'answering', 'reveal', 'battleEnd', 
 export class BrainRingMode {
   constructor(game) {
     this.game = game
-    this.cache = { pack: null, list: [] }
     this.commands = {
       'br.next': () => this.goto(this.s.qIndex + 1),
-      'br.goto': (a) => this.goto(Number(a.index)),
       'br.start': () => this.startTime(),
       'br.judge': (a) => this.judge(a.correct === true),
-      'br.show': (a) => this.showQuestion(a.show !== false),
       'br.cancel': () => this.cancel(),
       'br.burn': () => this.burnCommand(),
       'br.value': (a) => this.setValue(a.value),
@@ -35,8 +32,7 @@ export class BrainRingMode {
   static initialState() {
     return {
       stage: 'idle', // idle | reading | armed | answering | reveal | battleEnd | finished
-      qIndex: -1,
-      showQuestion: false,
+      qIndex: -1, // номер вопроса в турнире (с нуля)
       value: 1,
       carry: 0,
       armCount: 0,
@@ -57,16 +53,13 @@ export class BrainRingMode {
   }
 
   reset() {
-    const { battle, battles } = this.s
-    // Пакет сменили — вопросы начинаются сначала, а бои и таблица турнира остаются.
-    this.game.state.brainring = { ...BrainRingMode.initialState(), battle, battles }
+    this.game.state.brainring = BrainRingMode.initialState()
   }
 
   sanitize() {
     const s = this.s
-    if (!Number.isInteger(s.qIndex)) s.qIndex = -1
-    const total = this.total()
-    if (total != null && s.qIndex >= total) s.qIndex = total - 1
+    if (!Number.isInteger(s.qIndex) || s.qIndex < -1) s.qIndex = -1
+    delete s.showQuestion
     if (!Array.isArray(s.history)) s.history = []
     if (s.stage === 'armed' || s.stage === 'answering') s.stage = 'reading'
     if (!STAGES.includes(s.stage)) s.stage = 'idle'
@@ -77,24 +70,6 @@ export class BrainRingMode {
       s.battle.extra = Number.isInteger(s.battle.extra) ? s.battle.extra : 0
       s.battle.tie = s.battle.tie === true
     }
-  }
-
-  // Все вопросы пакета подряд (все раунды и темы) — для брейн-ринга цены не важны.
-  questions() {
-    const pack = this.game.pack
-    if (!pack) return []
-    if (this.cache.pack !== pack) {
-      const list = []
-      pack.rounds.forEach((r) =>
-        r.themes.forEach((t) => t.questions.forEach((q) => list.push({ themeName: t.name, roundName: r.name, question: q }))),
-      )
-      this.cache = { pack, list }
-    }
-    return this.cache.list
-  }
-
-  total() {
-    return this.game.pack ? this.questions().length : null
   }
 
   canStart() {
@@ -338,9 +313,7 @@ export class BrainRingMode {
   // ───────────── вопросы ─────────────
 
   goto(index) {
-    const total = this.total()
     if (!Number.isInteger(index) || index < 0) throw new GameError('Нет такого вопроса')
-    if (total != null && index >= total) throw new GameError('Вопросы в пакете закончились')
     const s = this.s
     if (s.stage === 'finished') throw new GameError('Турнир завершён — продолжите игру, чтобы играть дальше')
     if (s.battle?.tie) throw new GameError('Ничья: выберите «Дополнительный вопрос» или «Ничья»')
@@ -350,7 +323,6 @@ export class BrainRingMode {
     this.game.stopTimers()
     s.qIndex = index
     s.stage = 'reading'
-    s.showQuestion = this.settings.brAutoShowQuestion
     s.value = this.settings.brQuestionValue + s.carry
     s.armCount = 0
     s.answeredBy = null
@@ -358,7 +330,7 @@ export class BrainRingMode {
     const b = s.battle
     const limit = this.battleLimit()
     this.game.log(
-      `Бой №${b.no}, вопрос ${b.played + 1}${limit ? ` из ${limit}` : ''} (№${index + 1} в пакете)${s.value > 1 ? `, стоимость ${s.value}` : ''}`,
+      `Бой №${b.no}, вопрос ${b.played + 1}${limit ? ` из ${limit}` : ''}${s.value > 1 ? `, стоимость ${s.value}` : ''}`,
     )
     this.game.emitEvent('brQuestion', { index })
     return true
@@ -482,11 +454,6 @@ export class BrainRingMode {
     }
   }
 
-  showQuestion(show) {
-    this.s.showQuestion = show
-    return true
-  }
-
   setValue(value) {
     const n = Math.round(Number(value))
     if (!Number.isFinite(n) || n < 0 || n > 1000) throw new GameError('Неверная стоимость')
@@ -527,19 +494,12 @@ export class BrainRingMode {
   view(role) {
     const s = this.s
     const host = role === 'host'
-    const list = this.questions()
-    const item = s.qIndex >= 0 ? list[s.qIndex] ?? null : null
-    const revealed = s.stage === 'reveal' || s.stage === 'battleEnd' || s.stage === 'finished'
-    const showAnswer = host || (revealed && this.settings.brShowAnswer)
-    const showContent = host || s.showQuestion || (revealed && this.settings.brShowAnswer)
     const b = s.battle
     return {
       stage: s.stage,
       qIndex: s.qIndex,
-      total: this.total(),
       value: s.value,
       carry: s.carry,
-      showQuestion: s.showQuestion,
       answeredBy: s.answeredBy,
       winnerId: s.winnerId,
       history: s.history.slice(-100),
@@ -558,16 +518,6 @@ export class BrainRingMode {
       battles: s.battles.slice(-100),
       standings: this.standings(),
       nextPair: host ? this.nextPair() : null,
-      question: item
-        ? {
-            themeName: item.themeName,
-            content: showContent ? item.question.content : null,
-            answer: showAnswer ? item.question.answer : null,
-            answerContent: showAnswer ? item.question.answerContent : null,
-            comment: host ? item.question.comment || null : null,
-          }
-        : null,
-      list: host ? list.map((x) => ({ themeName: x.themeName, preview: preview(x.question) })) : null,
     }
   }
 
@@ -590,15 +540,4 @@ function cleanBattle(b) {
     played: Number.isInteger(b.played) ? b.played : 0,
     winnerId: typeof b.winnerId === 'string' ? b.winnerId : null,
   }
-}
-
-function preview(question) {
-  const text = question.content
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text)
-    .join(' ')
-    .trim()
-  const media = question.content.find((c) => c.type !== 'text')
-  const label = text || (media ? { image: '[картинка]', audio: '[звук]', video: '[видео]' }[media.type] : '')
-  return label.length > 90 ? `${label.slice(0, 88)}…` : label
 }

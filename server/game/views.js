@@ -39,15 +39,6 @@ export function buildViews(game) {
     falseStarts: b.falseStarts,
   }
 
-  const pack = game.pack
-    ? {
-        id: game.pack.id,
-        title: game.pack.title,
-        author: game.pack.author,
-        rounds: game.pack.rounds.map((r) => ({ name: r.name, type: r.type, themes: r.themes.length })),
-      }
-    : null
-
   const base = {
     stage: s.stage,
     mode: s.mode,
@@ -63,7 +54,6 @@ export function buildViews(game) {
     competitors,
     buzzer,
     timers: s.timers,
-    pack,
   }
 
   // «Хамса» показывается так же, как «Своя игра» (темы, вопросы, раунд со ставками) — в поле jeopardy.

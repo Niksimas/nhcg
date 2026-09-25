@@ -2,14 +2,15 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { makeGame, addPlayers } from './helpers.js'
 import { Game } from '../game/game.js'
-import { normalizePack } from '../packs/normalize.js'
+
+// Телевизионный формат с маленьким табло: один раунд из двух тем по два вопроса (100 и 200) и финал.
+const TV = { jFormat: 'tv', jRounds: 1, jThemes: 2, jQuestions: 2 }
 
 // По умолчанию — телевизионный формат (табло, спецвопросы, финал); спортивный проверяется отдельно.
-async function startJeopardy(names = ['Аня', 'Боря', 'Вика'], patch = { jFormat: 'tv' }) {
+async function startJeopardy(names = ['Аня', 'Боря', 'Вика'], patch = TV) {
   const ctx = makeGame()
   const players = addPlayers(ctx.game, names)
   ctx.game.hostCommand('settings.update', { patch })
-  await ctx.game.hostCommand('pack.load', { packId: 'test-pack' })
   ctx.game.hostCommand('game.start')
   return { ...ctx, players }
 }
@@ -31,10 +32,57 @@ test('имя должно быть уникальным, но можно вер�
   assert.equal(back.id, a.id)
 })
 
-test('«Своя игра» без пакета не начинается', () => {
+test('«Своя игра» начинается без пакета: раунды и темы строятся из настроек', () => {
   const { game } = makeGame()
-  assert.throws(() => game.hostCommand('game.start'), /пакет/)
-  assert.equal(game.state.stage, 'lobby')
+  game.hostCommand('game.start')
+  const view = game.buildViews().pub.jeopardy
+  assert.equal(view.format, 'sport')
+  assert.deepEqual(
+    view.rounds.map((r) => r.name),
+    ['Открытый раунд', 'Полуоткрытый раунд', 'Закрытый раунд', 'Командирский раунд'],
+  )
+  assert.equal(view.board.length, 4, 'по умолчанию 4 темы')
+  assert.deepEqual(
+    view.board[0].questions.map((q) => q.price),
+    [10, 20, 30, 40, 50],
+  )
+  assert.equal(view.board[2].name, 'Тема 3')
+})
+
+test('ведущий вписывает названия тем, пустое название возвращает «Тема N»', () => {
+  const { game } = makeGame({ settings: TV })
+  game.hostCommand('game.start')
+  game.hostCommand('j.theme.name', { round: 0, theme: 1, name: '  Столицы  ' })
+  game.hostCommand('j.theme.name', { round: 1, theme: 0, name: 'Космос' })
+  let view = game.buildViews().pub.jeopardy
+  assert.equal(view.board[1].name, 'Столицы')
+  assert.equal(view.board[1].named, true)
+  assert.equal(view.board[0].name, 'Тема 1')
+  game.hostCommand('j.select', { id: '0:1:0' })
+  assert.equal(game.buildViews().pub.jeopardy.question.themeName, 'Столицы')
+  game.hostCommand('j.theme.name', { round: 0, theme: 1, name: '' })
+  view = game.buildViews().pub.jeopardy
+  assert.equal(view.board[1].name, 'Тема 2')
+  assert.throws(() => game.hostCommand('j.theme.name', { round: 0, theme: 9, name: 'x' }), /не найдена/)
+  // Финал со ставками — тоже тема, её можно назвать.
+  game.hostCommand('j.theme.name', { round: 1, theme: 0, name: 'Космос' })
+  assert.equal(game.state.jeopardy.names[1][0], 'Космос')
+})
+
+test('скелет игры меняется в настройках, сыгранные вопросы остаются сыгранными', async () => {
+  const { game } = await startJeopardy()
+  game.hostCommand('j.select', { id: '0:1:1' })
+  game.hostCommand('j.reveal')
+  game.hostCommand('j.close')
+  game.hostCommand('settings.update', { patch: { jThemes: 3, jQuestions: 3 } })
+  const view = game.buildViews().pub.jeopardy
+  assert.equal(view.board.length, 3)
+  assert.deepEqual(
+    view.board[0].questions.map((q) => q.price),
+    [100, 200, 300],
+  )
+  assert.equal(view.board[1].questions[1].played, true)
+  assert.equal(game.state.jeopardy.stage, 'board')
 })
 
 test('обычный вопрос: блокировка за раннее нажатие, честный победитель, штраф и повтор', async () => {
@@ -116,24 +164,29 @@ test('если все ответили неверно — вопрос закр�
   assert.equal(game.score(players[1].id), -100)
 })
 
-test('кот в мешке, аукцион и вопрос без риска', async () => {
+test('кот в мешке, аукцион и вопрос без риска ведущий отмечает сам', async () => {
   const { game, players } = await startJeopardy()
   const [a, b] = players
-  const j = game.state.jeopardy
+  let j = game.state.jeopardy
 
   game.hostCommand('j.select', { id: '0:0:1' })
+  assert.equal(j.q.step, 'reading', 'обычный вопрос, пока ведущий не отметил спецвопрос')
+  game.hostCommand('j.special', { type: 'cat' })
   assert.equal(j.q.step, 'special')
-  assert.equal(j.q.price, 500)
-  const pub = game.buildViews().pub.jeopardy.question
-  assert.equal(pub.catTheme, 'Коты')
-  assert.equal(pub.content, null, 'содержимое скрыто до назначения отвечающего')
-  game.hostCommand('j.assign', { competitorId: b.id })
+  assert.equal(game.state.buzzer.status, 'off', 'у спецвопроса кнопки выключены')
+  assert.equal(game.buildViews().pub.jeopardy.question.type, 'cat')
+  game.hostCommand('j.assign', { competitorId: b.id, price: 500 })
   assert.equal(j.q.responderId, b.id)
   game.hostCommand('j.judge', { correct: true })
   assert.equal(game.score(b.id), 500)
   game.hostCommand('j.close')
 
   game.hostCommand('j.select', { id: '0:1:0' })
+  game.hostCommand('j.arm')
+  assert.throws(() => game.hostCommand('j.special', { type: 'auction' }), /до того, как открыты кнопки/)
+  game.hostCommand('undo')
+  j = game.state.jeopardy // после отмены состояние восстановлено из снимка
+  game.hostCommand('j.special', { type: 'auction' })
   game.hostCommand('j.assign', { competitorId: a.id, price: 300 })
   game.hostCommand('j.judge', { correct: false })
   assert.equal(game.score(a.id), -300)
@@ -141,12 +194,23 @@ test('кот в мешке, аукцион и вопрос без риска', a
   game.hostCommand('j.close')
 
   game.hostCommand('j.select', { id: '0:1:1' })
+  game.hostCommand('j.special', { type: 'norisk' })
   game.hostCommand('j.assign', { competitorId: a.id })
   game.hostCommand('j.judge', { correct: false })
   assert.equal(game.score(a.id), -300, 'без риска — без штрафа')
   game.hostCommand('undo')
   game.hostCommand('j.judge', { correct: true })
   assert.equal(game.score(a.id), 100, 'без риска — двойная цена')
+})
+
+test('в спортивном формате спецвопросы включаются в настройках', async () => {
+  const { game } = await startJeopardy(['Аня'], { jFormat: 'sport' })
+  game.hostCommand('j.next')
+  game.hostCommand('j.next')
+  assert.throws(() => game.hostCommand('j.special', { type: 'cat' }), /выключены/)
+  game.hostCommand('settings.update', { patch: { jSpecials: true } })
+  game.hostCommand('j.special', { type: 'norisk' })
+  assert.equal(game.state.jeopardy.q.type, 'norisk')
 })
 
 test('отмена последнего действия возвращает счёт и отвечающего', async () => {
@@ -176,7 +240,7 @@ test('выбор вопроса с телефона — только выбир�
   assert.equal(game.state.jeopardy.stage, 'question')
 })
 
-test('финал: темы, ставки, ответы с телефонов и подсчёт', async () => {
+test('финал: ставки, ответы с телефонов и подсчёт', async () => {
   const { game, players } = await startJeopardy()
   const [a, b, c] = players
   game.state.scores[a.id] = 500
@@ -186,10 +250,8 @@ test('финал: темы, ставки, ответы с телефонов и 
   const j = game.state.jeopardy
   assert.equal(j.stage, 'final')
   assert.deepEqual(j.final.participants.sort(), [a.id, b.id].sort(), 'с отрицательным счётом в финал не проходят')
-  assert.equal(j.final.step, 'themes')
-  game.hostCommand('j.final.removeTheme', { index: 0 })
-  assert.equal(j.final.step, 'bets')
-  assert.equal(j.final.themeIndex, 1)
+  assert.equal(j.final.step, 'bets', 'тема финала одна — сразу ставки')
+  assert.equal(game.buildViews().pub.jeopardy.final.themeName, 'Финал')
 
   assert.throws(() => game.playerAction(a.id, 'finalBet', { amount: 600 }), /от 1 до 500/)
   game.playerAction(a.id, 'finalBet', { amount: 400 })
@@ -212,19 +274,13 @@ test('финал: темы, ставки, ответы с телефонов и 
   // Передумали — пересуживаем
   game.hostCommand('j.final.judge', { competitorId: b.id, correct: true })
   assert.equal(game.score(b.id), 600)
-  game.hostCommand('j.final.answer')
-  assert.equal(game.buildViews().pub.jeopardy.final.answer, 'Ф2')
   game.hostCommand('j.results')
   assert.equal(j.stage, 'results')
 })
 
 test('новый раунд начинает игрок с наименьшим счётом', async () => {
-  const pack = (await import('./helpers.js')).TEST_PACK
-  const twoRounds = { ...pack, rounds: [pack.rounds[0], { ...pack.rounds[0], name: 'Раунд 2' }] }
-  const { game } = makeGame({ pack: twoRounds })
+  const { game } = makeGame({ settings: { ...TV, jRounds: 2 } })
   const [a, b] = addPlayers(game, ['Аня', 'Боря'])
-  game.hostCommand('settings.update', { patch: { jFormat: 'tv' } })
-  await game.hostCommand('pack.load', { packId: 'test-pack' })
   game.hostCommand('game.start')
   game.state.scores[a.id] = 500
   game.state.scores[b.id] = 100
@@ -432,27 +488,22 @@ test('«Брейн-ринг»: бой до заданного счёта зак�
   assert.equal(game.state.brainring.battles[0].winnerId, teams[0].id)
 })
 
-test('«Брейн-ринг» по пакету: вопросы идут по порядку, ответ скрыт до конца вопроса', async () => {
+test('«Брейн-ринг»: вопросы читаются с листа, программа их только нумерует', () => {
   const { game, time } = makeGame()
   const [a] = addPlayers(game, ['Альфа'])
-  await game.hostCommand('pack.load', { packId: 'test-pack' })
   game.hostCommand('mode.set', { mode: 'brainring' })
   game.hostCommand('game.start')
   game.hostCommand('br.next')
-  let views = game.buildViews()
-  assert.equal(views.host.brainring.question.answer, 'Ответ А100')
-  assert.equal(views.pub.brainring.question.answer, null)
-  assert.equal(views.pub.brainring.question.content, null)
-  game.hostCommand('br.show', { show: true })
-  views = game.buildViews()
-  assert.equal(views.pub.brainring.question.content[0].text, 'Вопрос А100')
-  assert.equal(views.host.brainring.total, 6)
   game.hostCommand('br.start')
   time.advance(1000)
   game.buzz(a.id, time.now())
   time.advance(300)
   game.hostCommand('br.judge', { correct: true })
-  assert.equal(game.buildViews().pub.brainring.question.answer, 'Ответ А100')
+  game.hostCommand('br.next')
+  const view = game.buildViews().pub.brainring
+  assert.equal(view.qIndex, 1)
+  assert.equal('question' in view, false, 'текста вопросов в программе нет')
+  assert.equal(game.score(a.id), 1)
 })
 
 test('время вышло во время сбора нажатий — нажатие всё равно засчитывается', async () => {
@@ -483,7 +534,7 @@ test('сохранение и восстановление после перез
   assert.equal(fresh.state.stage, 'game')
   assert.equal(fresh.score(players[0].id), 100)
   assert.equal(fresh.playerByToken(players[0].token).id, players[0].id)
-  assert.equal(fresh.pack.id, 'test-pack')
+  assert.equal(fresh.settings.jThemes, 2, 'скелет игры восстанавливается из настроек')
   assert.equal(fresh.state.jeopardy.q.step, 'reveal')
   assert.equal(fresh.isConnected(players[0].id), false)
 })
@@ -513,8 +564,6 @@ test('представление игрока содержит его место
   assert.equal(meA.isWinner, true)
   assert.equal(meB.rank, 2)
   assert.equal(meB.delta, 10)
-  assert.equal(views.pub.jeopardy.question.answer, null)
-  assert.equal(views.host.jeopardy.question.answer, 'Ответ А100')
 })
 
 test('удалённый игрок пропадает, его счёт тоже', () => {
@@ -554,13 +603,14 @@ test('после перезапуска открытый вопрос возвр
   game.hostCommand('j.reveal')
   game.hostCommand('j.close')
   game.hostCommand('j.select', { id: '0:0:1' })
+  game.hostCommand('j.special', { type: 'cat' })
   game.hostCommand('j.assign', { competitorId: players[1].id })
   const { game: g2 } = makeGame()
   await g2.restore(JSON.parse(JSON.stringify(game.serialize())))
   assert.equal(g2.state.jeopardy.q.step, 'answering')
   assert.equal(g2.state.jeopardy.q.responderId, players[1].id)
   g2.hostCommand('j.judge', { correct: true })
-  assert.equal(g2.score(players[1].id), 500)
+  assert.equal(g2.score(players[1].id), 200)
 })
 
 test('проверка звука отправляет событие экранам', () => {
@@ -622,25 +672,8 @@ test('закрытый вход: новые игроки не входят, но
 
 // ───────────── Спортивная «Своя игра» (правила «Эрудит-квартета») ─────────────
 
-function sportPack() {
-  const theme = (r, t) => ({
-    name: `Тема ${r}.${t}`,
-    questions: [1, 2, 3, 4, 5].map((n) => ({ price: n * 100, question: `Вопрос ${r}.${t}.${n}`, answer: `Ответ ${r}.${t}.${n}` })),
-  })
-  return normalizePack(
-    {
-      title: 'Спортивный пакет',
-      rounds: [
-        { name: 'Первый', themes: [theme(1, 1), theme(1, 2)] },
-        { name: 'Второй', themes: [theme(2, 1), theme(2, 2)] },
-        { name: 'Третий', themes: [theme(3, 1), theme(3, 2)] },
-        { name: 'Четвёртый', themes: [theme(4, 1), theme(4, 2)] },
-        { name: 'Финал', type: 'final', themes: [{ name: 'Ф', questions: [{ price: 0, question: 'Ф?', answer: 'Ф' }] }] },
-      ],
-    },
-    { id: 'test-pack' },
-  )
-}
+// Спортивный формат с двумя темами в раунде (по 5 вопросов, 4 раунда).
+const SPORT = { jFormat: 'sport', jThemes: 2 }
 
 // Правильный/неправильный ответ игрока на открытый вопрос.
 function jAnswer(game, time, player, correct) {
@@ -652,9 +685,8 @@ function jAnswer(game, time, player, correct) {
 }
 
 test('спортивная «Своя игра»: темы по 5 вопросов подряд, 10–50 очков, минус за ошибку', async () => {
-  const { game, time } = makeGame({ pack: sportPack() })
+  const { game, time } = makeGame({ settings: SPORT })
   const [a, b] = addPlayers(game, ['Аня', 'Боря'])
-  await game.hostCommand('pack.load', { packId: 'test-pack' })
   game.hostCommand('game.start')
   const j = () => game.state.jeopardy
   assert.equal(j().stage, 'board', 'без команд распределять игроков не нужно')
@@ -665,7 +697,7 @@ test('спортивная «Своя игра»: темы по 5 вопросо
     view.board[0].questions.map((q) => q.price),
     [10, 20, 30, 40, 50],
   )
-  assert.ok(view.rounds[4].skip, 'финал со ставками в спортивном формате не играется')
+  assert.equal(view.rounds.length, 4, 'финала со ставками в спортивном формате нет')
 
   game.hostCommand('j.next') // тема 1
   assert.equal(j().stage, 'theme')
@@ -707,7 +739,7 @@ test('спортивная «Своя игра»: темы по 5 вопросо
 })
 
 function sportTeams() {
-  const ctx = makeGame({ pack: sportPack() })
+  const ctx = makeGame({ settings: SPORT })
   const { game } = ctx
   game.hostCommand('settings.update', { patch: { teamMode: true } })
   const red = game.createTeam('Красные')
@@ -728,7 +760,6 @@ function sportTeams() {
 test('спортивная «Своя игра» в командах: капитаны распределяют игроков, за столом один игрок от команды', async () => {
   const { game, time, red, blue, r1, r2, b1, b2 } = sportTeams()
   assert.equal(game.captainOf(red.id), r1.id, 'первый вошедший — капитан')
-  await game.hostCommand('pack.load', { packId: 'test-pack' })
   game.hostCommand('game.start')
   const j = () => game.state.jeopardy
   // Открытый раунд начинается с распределения игроков по темам.
@@ -738,7 +769,7 @@ test('спортивная «Своя игра» в командах: капит
   assert.equal(me.isCaptain, true)
   assert.deepEqual(
     me.captain.themes.map((t) => t.name),
-    ['Тема 1.1', 'Тема 1.2'],
+    ['Тема 1', 'Тема 2'],
     'в открытом раунде темы видны сразу',
   )
   assert.throws(() => game.playerAction(r2.id, 'assign', { themeIndex: 0, playerId: r2.id }), /только капитан/)
@@ -782,7 +813,6 @@ test('спортивная «Своя игра» в командах: капит
 
 test('виды раундов: полуоткрытый — выбор перед темой, закрытый — темы скрыты, командирский — капитаны', async () => {
   const { game, time, red, blue, r1, r2, b1 } = sportTeams()
-  await game.hostCommand('pack.load', { packId: 'test-pack' })
   game.hostCommand('game.start')
   const j = () => game.state.jeopardy
   game.hostCommand('j.assign.done')
@@ -796,7 +826,7 @@ test('виды раундов: полуоткрытый — выбор пере�
   assert.equal(j().stage, 'assign')
   assert.equal(j().phase.scope, 'theme')
   pub = game.buildViews().pub.jeopardy
-  assert.equal(pub.board[0].name, 'Тема 2.1', 'тему объявили перед выбором игрока')
+  assert.equal(pub.board[0].name, 'Тема 1', 'тему объявили перед выбором игрока')
   assert.equal(pub.board[1].name, null)
   game.playerAction(r1.id, 'assign', { themeIndex: 0, playerId: r2.id })
   game.playerAction(r1.id, 'assignReady')
@@ -813,7 +843,9 @@ test('виды раундов: полуоткрытый — выбор пере�
     cap.themes.map((t) => t.name),
     [null, null],
   )
-  assert.equal(game.buildViews().host.jeopardy.phase.themes[0].name, 'Тема 3.1', 'ведущий видит темы')
+  game.hostCommand('j.theme.name', { round: 2, theme: 0, name: 'Живопись' })
+  assert.equal(game.buildViews().host.jeopardy.phase.themes[0].name, 'Живопись', 'ведущий видит темы')
+  assert.equal(game.buildViews().me(r1.id).jeopardy.captain.themes[0].name, null, 'капитаны — нет')
 
   // Четвёртый — командирский: играют капитаны, выбирать никого не нужно.
   game.hostCommand('j.round', { index: 3 })
@@ -844,10 +876,9 @@ test('капитан: назначается автоматически, пер�
 
 test('спортивный формат: выбор игроков переживает перезапуск сервера', async () => {
   const { game, red, r1, r2 } = sportTeams()
-  await game.hostCommand('pack.load', { packId: 'test-pack' })
   game.hostCommand('game.start')
   game.playerAction(r1.id, 'assign', { themeIndex: 0, playerId: r2.id })
-  const { game: g2 } = makeGame({ pack: sportPack() })
+  const { game: g2 } = makeGame()
   await g2.restore(JSON.parse(JSON.stringify(game.serialize())))
   assert.equal(g2.state.jeopardy.stage, 'assign')
   assert.equal(g2.state.jeopardy.assign[0][red.id][0], r2.id)
