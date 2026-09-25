@@ -225,8 +225,8 @@ const title = computed(() => {
             {{ fmtScore(c.score) }}
           </div>
           <div class="pm">
-            <button class="btn small flat" :title="`−${step}`" @click="add(c, -1)"><Icon name="minus" size="0.9em" /></button>
-            <button class="btn small flat" :title="`+${step}`" @click="add(c, 1)"><Icon name="plus" size="0.9em" /></button>
+            <button class="pm-btn minus nums" :title="`Снять ${step}`" @click="add(c, -1)">−{{ step }}</button>
+            <button class="pm-btn plus nums" :title="`Добавить ${step}`" @click="add(c, 1)">+{{ step }}</button>
           </div>
         </div>
       </div>
@@ -418,8 +418,10 @@ const title = computed(() => {
 }
 .score-wrap {
   display: flex;
-  align-items: center;
-  gap: 2px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  flex: none;
 }
 .score {
   min-width: 3.5em;
@@ -437,10 +439,37 @@ const title = computed(() => {
 }
 .pm {
   display: flex;
-  flex-direction: column;
+  gap: 4px;
 }
-.pm .btn {
-  padding: 0.1em 0.35em;
+.pm-btn {
+  min-width: 2.9em;
+  padding: 2px 7px;
+  border-radius: 8px;
+  border: 1px solid var(--line-2);
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.35;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+.pm-btn.minus:hover {
+  color: var(--bad);
+  border-color: var(--bad);
+  background: var(--bad-soft);
+}
+.pm-btn.plus:hover {
+  color: var(--ok-2);
+  border-color: var(--ok);
+  background: var(--ok-soft);
+}
+.pm-btn:active {
+  transform: translateY(1px);
 }
 .palette {
   display: flex;

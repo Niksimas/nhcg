@@ -187,7 +187,7 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
           {{ a.correct ? '✓' : '✗' }} {{ nameOf(a.competitorId) }} {{ a.delta > 0 ? '+' : '' }}{{ a.delta || '' }}
         </span>
       </div>
-      <p class="muted hint manual">Счёт можно поправить вручную: кнопки ± у игрока слева или щелчок по его счёту.</p>
+      <p class="muted hint manual">Счёт можно поправить вручную: кнопки − / + у игрока слева (шаг — цена вопроса) или щелчок по его счёту.</p>
     </div>
   </div>
 </template>

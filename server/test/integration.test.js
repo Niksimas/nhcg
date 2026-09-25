@@ -55,6 +55,8 @@ test('полный цикл: ведущий, два игрока, «Своя и�
   const ack = await anna.wait((m) => m.t === 'buzzAck')
   assert.equal(ack.result, 'test')
   await host.wait((m) => m.t === 'event' && m.name === 'test')
+  // Сервер не принимает повторное нажатие с того же телефона раньше чем через 40 мс (защита от дребезга).
+  await new Promise((r) => setTimeout(r, 50))
 
   // Телевизионный формат: табло тем и цен (вопросы ведущий читает с листа; спортивный — в game.test.js).
   await host.cmd('settings.update', { patch: { jFormat: 'tv' } })
