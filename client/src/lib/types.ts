@@ -19,6 +19,13 @@ export interface Settings {
   hideAnswerOnHost: boolean
   onlineMode: boolean
   joinLocked: boolean
+  jFormat: 'sport' | 'tv'
+  jPrices: 'x10' | 'x1' | 'x100' | 'pack'
+  jTableMode: 'one' | 'team'
+  jAssignRoundTime: number
+  jAssignThemeTime: number
+  jOnePerPlayer: boolean
+  jSpecials: boolean
   jBuzzTime: number
   jAnswerTime: number
   jWrongPenalty: boolean
@@ -31,6 +38,11 @@ export interface Settings {
   brAfterWrongMode: 'atLeast' | 'fixed' | 'remaining'
   brAnswerTime: number
   brTargetScore: number
+  brBattleQuestions: number
+  brWinPoints: number
+  brDrawPoints: number
+  brTieMode: 'extra' | 'draw' | 'ask'
+  brTotal: 'sum' | 'wins'
   brCarryOver: boolean
   brQuestionValue: number
   brAutoShowQuestion: boolean
@@ -49,6 +61,7 @@ export interface TeamInfo {
   id: string
   name: string
   color: string
+  captainId: string | null
 }
 
 export interface Competitor {
@@ -128,8 +141,18 @@ export interface JBoardCell {
 }
 
 export interface JBoardTheme {
-  name: string
+  // null — тема ещё не объявлена (полуоткрытый и закрытый раунды)
+  name: string | null
+  hidden?: boolean
+  current?: boolean
   questions: JBoardCell[]
+}
+
+export type RoundKind = 'open' | 'semi' | 'closed' | 'captain'
+
+export interface PlayerRef {
+  playerId: string
+  name: string
 }
 
 export interface JFinalParticipant {
@@ -156,11 +179,21 @@ export interface JFinal {
 }
 
 export interface JeopardyView {
-  stage: 'board' | 'question' | 'roundEnd' | 'final' | 'results'
+  format: 'sport' | 'tv'
+  stage: 'board' | 'assign' | 'theme' | 'question' | 'roundEnd' | 'final' | 'results'
   roundIndex: number
-  rounds: { name: string; type: 'normal' | 'final'; complete: boolean }[]
+  rounds: { name: string; type: 'normal' | 'final'; complete: boolean; skip: boolean; kind: RoundKind | null }[]
   chooserId: string | null
+  kind: RoundKind | null
+  tablePlay: boolean
+  themeIndex: number | null
   board: JBoardTheme[] | null
+  // выбор игроков капитанами
+  phase: { scope: 'round' | 'theme'; themes: { index: number; name: string | null }[]; ready: string[] } | null
+  // кто за столом в текущей теме: команда → игрок
+  table: Record<string, PlayerRef | null> | null
+  // расстановка по темам раунда: команда → номер темы → игрок
+  assign: Record<string, Record<string, PlayerRef>> | null
   question: JQuestion | null
   final: JFinal | null
 }
@@ -172,8 +205,37 @@ export interface BrHistoryItem {
   value: number
 }
 
+export interface BrBattle {
+  no: number
+  teams: string[]
+  scores: Record<string, number>
+  played: number
+  limit: number
+  extra: number
+  tie: boolean
+}
+
+export interface BrBattleResult {
+  no: number
+  teams: string[]
+  scores: Record<string, number>
+  winnerId: string | null
+  played: number
+}
+
+export interface BrStanding {
+  competitorId: string
+  played: number
+  wins: number
+  draws: number
+  losses: number
+  taken: number
+  against: number
+  total: number
+}
+
 export interface BrainRingView {
-  stage: 'idle' | 'reading' | 'armed' | 'answering' | 'reveal' | 'finished'
+  stage: 'idle' | 'reading' | 'armed' | 'answering' | 'reveal' | 'battleEnd' | 'finished'
   qIndex: number
   total: number | null
   value: number
@@ -182,6 +244,11 @@ export interface BrainRingView {
   answeredBy: string | null
   winnerId: string | null
   history: BrHistoryItem[]
+  battle: BrBattle | null
+  lastBattle: BrBattleResult | null
+  battles: BrBattleResult[]
+  standings: BrStanding[]
+  nextPair: string[] | null
   question: {
     themeName: string
     content: ContentItem[] | null
@@ -246,7 +313,19 @@ export interface MeView {
   delta: number | null
   reaction: number | null
   isWinner: boolean
+  brainring: { inBattle: boolean | null } | null
   jeopardy: {
+    isCaptain: boolean
+    atTable: boolean | null
+    tablePlayer: PlayerRef | null
+    myThemes: { index: number; name: string | null }[]
+    captain: {
+      themes: { index: number; name: string | null }[]
+      members: { id: string; name: string; played: boolean }[]
+      picks: Record<string, string>
+      ready: boolean
+      unique: boolean
+    } | null
     isChooser: boolean
     canSelect: boolean
     final: {

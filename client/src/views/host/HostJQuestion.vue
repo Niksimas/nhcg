@@ -45,6 +45,21 @@ function assign() {
   void run('j.assign', { competitorId: pickId.value, price: price.value })
 }
 
+const sport = computed(() => j.value.format === 'sport')
+// Спортивный формат: сколько вопросов осталось в теме и кто за столом.
+const themeLeft = computed(() => {
+  const ti = j.value.themeIndex
+  if (ti == null) return 0
+  return (j.value.board?.[ti]?.questions ?? []).filter((x) => !x.played).length
+})
+const table = computed(() =>
+  j.value.table
+    ? s.value.teams
+        .filter((t) => j.value.table?.[t.id])
+        .map((t) => ({ id: t.id, color: t.color, team: t.name, name: j.value.table?.[t.id]?.name ?? '' }))
+    : [],
+)
+
 const mediaPlaying = computed(() => (props.hostPlays ? q.value.step === 'reading' || q.value.step === 'buzzing' : null))
 const hasMedia = computed(() => (q.value.content ?? []).some((c) => c.type !== 'text'))
 const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.responderId) : undefined))
@@ -56,6 +71,12 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
       <span class="theme">{{ q.themeName }}</span>
       <span class="price nums">{{ q.price }}</span>
       <span v-if="q.type !== 'normal'" class="chip type">{{ TYPE_LABEL[q.type] }}</span>
+    </div>
+    <div v-if="table.length" class="table-row">
+      <span class="muted small">За столом:</span>
+      <span v-for="t in table" :key="t.id" class="tp" :style="{ '--c': t.color, '--t': textOn(t.color) }">
+        {{ t.name }} <span class="faint">({{ t.team }})</span>
+      </span>
     </div>
 
     <div class="q-grid">
@@ -169,7 +190,13 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
 
       <template v-else-if="q.step === 'reveal'">
         <div class="revealed">Ответ показан на экране</div>
-        <button class="btn primary huge" @click="run('j.close')"><Icon name="grid" /> К табло <span class="kbd">Enter</span></button>
+        <template v-if="sport">
+          <button class="btn primary huge" @click="run('j.next')">
+            <Icon name="next" /> {{ themeLeft ? 'Следующий вопрос' : 'Тема сыграна — к темам раунда' }} <span class="kbd">Enter</span>
+          </button>
+          <button class="btn ghost" @click="run('j.close')"><Icon name="grid" /> К темам</button>
+        </template>
+        <button v-else class="btn primary huge" @click="run('j.close')"><Icon name="grid" /> К табло <span class="kbd">Enter</span></button>
       </template>
 
       <div v-if="q.attempts.length" class="attempts">
@@ -197,6 +224,26 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
 .theme {
   text-transform: uppercase;
   color: var(--muted);
+}
+.table-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: -6px;
+}
+.tp .faint {
+  color: inherit;
+  opacity: 0.75;
+  font-weight: 600;
+}
+.tp {
+  padding: 3px 10px;
+  border-radius: 99px;
+  background: var(--c);
+  color: var(--t);
+  font-weight: 700;
+  font-size: 0.9rem;
 }
 .price {
   color: var(--accent);

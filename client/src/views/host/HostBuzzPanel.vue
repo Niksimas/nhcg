@@ -30,6 +30,7 @@ const TIMER_LABEL: Record<string, string> = {
   answer: 'На ответ',
   main: 'Время вопроса',
   final: 'Финал',
+  assign: 'Выбор игроков',
 }
 const timers = computed(() =>
   Object.entries(s.value.timers).map(([name, t]) => ({ name, t, left: timerLeft(t, now.value) })),

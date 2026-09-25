@@ -123,6 +123,34 @@ export class Game extends EventEmitter {
     return this.state.teams.find((t) => t.id === id) ?? null
   }
 
+  teamMembers(teamId) {
+    return this.state.players.filter((p) => p.teamId === teamId)
+  }
+
+  // Капитан команды: назначенный (если он ещё в команде), иначе — первый по времени входа участник.
+  captainOf(teamId) {
+    const t = this.team(teamId)
+    if (!t) return null
+    const members = this.teamMembers(teamId)
+    if (t.captainId && members.some((p) => p.id === t.captainId)) return t.captainId
+    return members[0]?.id ?? null
+  }
+
+  // Закрепить капитана после изменений состава: новичок в пустой команде становится капитаном.
+  fixCaptain(teamId) {
+    const t = this.team(teamId)
+    if (t) t.captainId = this.captainOf(teamId)
+  }
+
+  setCaptain(teamId, playerId) {
+    const t = this.team(teamId)
+    if (!t) throw new GameError('Команда не найдена')
+    const p = this.player(playerId)
+    if (!p || p.teamId !== teamId) throw new GameError('Игрок не в этой команде')
+    t.captainId = p.id
+    this.log(`Капитан команды «${t.name}»: ${p.name}`)
+  }
+
   presenceOf(playerId) {
     let pr = this.presence.get(playerId)
     if (!pr) {
@@ -217,7 +245,7 @@ export class Game extends EventEmitter {
 
   addScore(cid, delta) {
     if (!cid || !finite(delta) || delta === 0) return
-    this.state.scores[cid] = this.score(cid) + delta
+    this.state.scores[cid] = Math.round((this.score(cid) + delta) * 10) / 10
   }
 
   nextColor(list) {
@@ -245,7 +273,7 @@ export class Game extends EventEmitter {
     if (this.state.teams.some((t) => t.name.toLowerCase() === clean.toLowerCase())) {
       throw new GameError('Команда с таким названием уже есть')
     }
-    const team = { id: newId(), name: clean, color: this.nextColor(this.state.teams) }
+    const team = { id: newId(), name: clean, color: this.nextColor(this.state.teams), captainId: null }
     this.state.teams.push(team)
     this.log(`Создана команда «${clean}»`)
     return team
@@ -281,6 +309,7 @@ export class Game extends EventEmitter {
       joinedAt: Date.now(),
     }
     this.state.players.push(player)
+    if (resolvedTeam) this.fixCaptain(resolvedTeam)
     this.log(`Подключился игрок ${clean}${resolvedTeam ? ` (${this.team(resolvedTeam).name})` : ''}`)
     this.emitEvent('join', { playerId: player.id })
     this.changed()
@@ -302,7 +331,10 @@ export class Game extends EventEmitter {
   setPlayerTeam(playerId, opts) {
     const p = this.player(playerId)
     if (!p) throw new GameError('Игрок не найден')
+    const oldTeam = p.teamId
     p.teamId = opts?.teamId === null && !opts?.newTeamName ? null : this.resolveTeam(opts)
+    if (oldTeam) this.fixCaptain(oldTeam)
+    if (p.teamId) this.fixCaptain(p.teamId)
     this.changed()
   }
 
@@ -312,6 +344,7 @@ export class Game extends EventEmitter {
     this.state.players = this.state.players.filter((x) => x !== p)
     delete this.state.scores[p.id]
     this.presence.delete(p.id)
+    if (p.teamId) this.fixCaptain(p.teamId)
     this.log(logText ?? `Игрок ${p.name} удалён`)
     this.emit('kick', p.id)
     this.changed()
@@ -376,9 +409,11 @@ export class Game extends EventEmitter {
     this.earlyLocks.delete(cid)
   }
 
+  // Кто ещё может нажать кнопку в этом вопросе (без выбывших и без команд, которые не участвуют в бою).
   eligibleCompetitors() {
     const b = this.state.buzzer
-    return this.competitors().filter((c) => c.canBuzz && !b.lockedOut.includes(c.id))
+    const only = this.mode.participants?.() ?? null
+    return this.competitors().filter((c) => c.canBuzz && !b.lockedOut.includes(c.id) && (!only || only.includes(c.id)))
   }
 
   clearCollect() {
@@ -406,6 +441,9 @@ export class Game extends EventEmitter {
       return { result: 'test' }
     }
     if (b.status === 'off') return { result: 'off' }
+    // Режим может не пускать к кнопке: тему играет другой игрок команды, команда не участвует в бою.
+    const denied = this.mode.buzzDenied?.(cid, playerId)
+    if (denied) return { result: denied }
     if (b.lockedOut.includes(cid)) return { result: 'locked' }
 
     if (b.status === 'answering') {
@@ -729,7 +767,10 @@ export class Game extends EventEmitter {
 
   updateSettings(patch) {
     const clean = sanitizeSettings(patch)
-    const teamModeChanged = 'teamMode' in clean && clean.teamMode !== this.settings.teamMode
+    const changed = (key) => key in clean && clean[key] !== this.settings[key]
+    const teamModeChanged = changed('teamMode')
+    // Формат «Своей игры» и порядок игры за столом меняют сам ход раунда — начинаем текущий раунд заново.
+    const formatChanged = changed('jFormat') || changed('jTableMode')
     Object.assign(this.state.settings, clean)
     if (teamModeChanged) {
       // Прежние участники кнопки (игроки ↔ команды) больше не существуют.
@@ -737,6 +778,10 @@ export class Game extends EventEmitter {
       this.setBuzzer(this.state.stage === 'lobby' ? 'test' : 'off')
       this.undoStack = []
       if (this.state.stage === 'game') this.mode.start()
+    } else if (formatChanged && this.state.stage === 'game' && this.state.mode === 'jeopardy') {
+      this.stopTimers()
+      this.undoStack = []
+      this.mode.start()
     }
   }
 
@@ -826,7 +871,12 @@ export class Game extends EventEmitter {
         }))
       s.teams = (Array.isArray(saved.teams) ? saved.teams : [])
         .filter((t) => isObj(t) && typeof t.id === 'string')
-        .map((t) => ({ id: t.id, name: cleanName(t.name, 32) || 'Команда', color: t.color || PALETTE[0] }))
+        .map((t) => ({
+          id: t.id,
+          name: cleanName(t.name, 32) || 'Команда',
+          color: t.color || PALETTE[0],
+          captainId: typeof t.captainId === 'string' ? t.captainId : null,
+        }))
       for (const p of s.players) if (p.teamId && !s.teams.some((t) => t.id === p.teamId)) p.teamId = null
       if (isObj(saved.scores)) {
         for (const [k, v] of Object.entries(saved.scores)) if (finite(v)) s.scores[k] = v
@@ -854,6 +904,7 @@ export class Game extends EventEmitter {
       if (isObj(saved.jeopardy)) s.jeopardy = { ...s.jeopardy, ...saved.jeopardy }
       if (isObj(saved.brainring)) s.brainring = { ...s.brainring, ...saved.brainring }
       this.state = s
+      for (const t of s.teams) this.fixCaptain(t.id)
       if (typeof saved.packId === 'string' && this.packStore) {
         try {
           this.pack = await this.packStore.loadForGame(saved.packId)
@@ -902,17 +953,19 @@ const HOST_COMMANDS = {
     const c = needCompetitor(g, a.competitorId)
     const value = Number(a.value)
     if (!finite(value)) throw new GameError('Неверное число')
+    const v = Math.round(value * 10) / 10
     g.pushUndo(`Счёт ${c.name}`)
-    g.state.scores[c.id] = Math.round(value)
-    g.log(`Счёт ${c.name} изменён на ${Math.round(value)}`)
+    g.state.scores[c.id] = v
+    g.log(`Счёт ${c.name} изменён на ${v}`)
   },
   'score.add': (g, a) => {
     const c = needCompetitor(g, a.competitorId)
     const delta = Number(a.delta)
     if (!finite(delta) || delta === 0) throw new GameError('Неверное число')
+    const d = Math.round(delta * 10) / 10
     g.pushUndo(`Счёт ${c.name}`)
-    g.addScore(c.id, Math.round(delta))
-    g.log(`${c.name}: ${delta > 0 ? '+' : ''}${Math.round(delta)} (вручную)`)
+    g.addScore(c.id, d)
+    g.log(`${c.name}: ${d > 0 ? '+' : ''}${d} (вручную)`)
   },
   'score.reset': (g) => {
     g.pushUndo('Сброс счёта')
@@ -947,6 +1000,7 @@ const HOST_COMMANDS = {
     p.color = a.color
   },
   'team.remove': (g, a) => g.removeTeam(a.teamId),
+  'team.captain': (g, a) => g.setCaptain(a.teamId, a.playerId),
 
   'timer.pause': (g, a) => g.pauseTimer(String(a.name)),
   'timer.resume': (g, a) => g.resumeTimer(String(a.name)),

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // «Брейн-ринг» у ведущего: вопрос, кнопка «Время!», таймер, приём ответов, счёт боя.
-import { computed, ref } from 'vue'
-import { competitorMap, fmtScore, textOn, timerLeft } from '../../lib/util'
+import { computed, ref, watch } from 'vue'
+import { competitorMap, textOn, timerLeft } from '../../lib/util'
 import ContentView from '../../components/ContentView.vue'
+import BrStandings from '../../components/BrStandings.vue'
 import TimerBar from '../../components/TimerBar.vue'
 import Modal from '../../components/Modal.vue'
 import Icon from '../../components/Icon.vue'
@@ -38,14 +39,42 @@ async function setValue() {
   if (v === null) return
   await run('br.value', { value: Number(v) })
 }
-async function newBattle() {
-  if (!confirm('Начать новый бой? Счёт всех команд обнулится.')) return
-  await run('br.newBattle')
+// ── бои ──
+const battle = computed(() => br.value.battle)
+const last = computed(() => br.value.lastBattle)
+const active = computed(() => s.value.competitors.filter((c) => c.canBuzz))
+const picked = ref<string[]>([])
+// Предлагаем пару, которая ещё не встречалась (или обе команды, если их две).
+watch(
+  () => [battle.value?.no ?? null, br.value.battles.length, (br.value.nextPair ?? []).join()] as const,
+  () => {
+    if (!battle.value) picked.value = [...(br.value.nextPair ?? [])]
+  },
+  { immediate: true },
+)
+function togglePick(id: string) {
+  picked.value = picked.value.includes(id) ? picked.value.filter((x) => x !== id) : [...picked.value, id]
+}
+async function startBattle() {
+  await run('br.battle', { teams: picked.value })
+}
+async function endBattle() {
+  if (!confirm('Завершить бой сейчас? Победит тот, у кого больше очков в бою, при равенстве — ничья.')) return
+  await run('br.endBattle')
 }
 async function finish() {
-  if (!confirm('Завершить бой и показать победителя?')) return
+  if (!confirm('Показать итоги турнира?')) return
   await run('br.finish')
 }
+const battleLabel = computed(() => {
+  const bt = battle.value
+  if (!bt) return ''
+  const n = bt.played + (br.value.stage === 'reveal' || br.value.stage === 'idle' ? 0 : 1)
+  const q = Math.max(1, Math.min(n, bt.limit || n))
+  const extra = bt.limit && n > s.value.settings.brBattleQuestions ? ' (дополнительный)' : ''
+  return `Бой №${bt.no} · вопрос ${q}${bt.limit ? ` из ${bt.limit}` : ''}${extra}`
+})
+const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' || br.value.stage === 'battleEnd'))
 const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'reading' || br.value.stage === 'armed' : null))
 </script>
 
@@ -53,12 +82,12 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
   <div class="br">
     <div class="top-row">
       <div class="qnum">
-        <template v-if="br.qIndex >= 0">
-          Вопрос №{{ br.qIndex + 1 }}<span v-if="br.total" class="muted"> из {{ br.total }}</span>
-        </template>
-        <template v-else>Вопросы ещё не начались</template>
+        <template v-if="battle">{{ battleLabel }}</template>
+        <template v-else-if="br.stage === 'battleEnd' && last">Бой №{{ last.no }} окончен</template>
+        <template v-else>Бой не начат</template>
+        <span v-if="br.qIndex >= 0 && br.total" class="muted small"> · в пакете №{{ br.qIndex + 1 }} из {{ br.total }}</span>
       </div>
-      <button v-if="br.stage !== 'idle' && br.stage !== 'finished'" class="chip value" title="Изменить стоимость" @click="setValue">
+      <button v-if="battle && ['reading', 'armed', 'answering'].includes(br.stage)" class="chip value" title="Изменить стоимость" @click="setValue">
         Стоимость: <b>{{ br.value }}</b>
       </button>
       <span v-if="br.carry > 0 && (br.stage === 'reveal' || br.stage === 'idle')" class="chip warn">
@@ -66,8 +95,65 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
       </span>
       <div class="grow" />
       <button v-if="hasPack" class="btn small" @click="listOpen = true"><Icon name="list" /> Все вопросы</button>
-      <button class="btn small ghost" @click="finish"><Icon name="flag" /> Завершить бой</button>
-      <button class="btn small ghost" @click="newBattle"><Icon name="refresh" /> Новый бой</button>
+      <button v-if="battle" class="btn small ghost" @click="endBattle"><Icon name="flag" /> Завершить бой</button>
+      <button v-else-if="br.stage !== 'finished'" class="btn small ghost" @click="finish"><Icon name="trophy" /> Итоги турнира</button>
+    </div>
+
+    <!-- Счёт текущего боя -->
+    <div v-if="battle" class="battle-bar">
+      <div
+        v-for="id in battle.teams"
+        :key="id"
+        class="bt"
+        :class="{ lead: (battle.scores[id] ?? 0) > 0 && battle.teams.every((x) => (battle!.scores[x] ?? 0) <= (battle!.scores[id] ?? 0)) }"
+        :style="{ '--c': comps.get(id)?.color ?? '#888', '--t': textOn(comps.get(id)?.color ?? '#888') }"
+      >
+        <span class="bt-name ellipsis">{{ nameOf(id) }}</span>
+        <b class="bt-score nums">{{ battle.scores[id] ?? 0 }}</b>
+      </div>
+    </div>
+
+    <!-- Ничья: решает ведущий -->
+    <div v-if="battle?.tie" class="card tie">
+      <div class="result burned">Ничья {{ battle.teams.map((id) => battle!.scores[id] ?? 0).join(' : ') }}</div>
+      <div class="row wrap">
+        <button class="btn primary big" @click="run('br.extra')"><Icon name="plus" /> Дополнительный вопрос</button>
+        <button class="btn big" @click="run('br.draw')">Засчитать ничью (+{{ s.settings.brDrawPoints }})</button>
+      </div>
+    </div>
+
+    <!-- Итог боя -->
+    <div v-if="br.stage === 'battleEnd' && last" class="card battle-end">
+      <div class="result ok">
+        Бой №{{ last.no }}: {{ last.teams.map((id) => `${nameOf(id)} ${last!.scores[id] ?? 0}`).join(' — ') }}
+      </div>
+      <div class="be-winner">
+        {{ last.winnerId ? `Победа: ${nameOf(last.winnerId)} (+${s.settings.brWinPoints})` : `Ничья (+${s.settings.brDrawPoints} каждой)` }}
+      </div>
+    </div>
+
+    <!-- Выбор команд на следующий бой -->
+    <div v-if="needsSetup && active.length" class="card setup">
+      <div class="label">{{ br.battles.length ? 'Следующий бой' : 'Первый бой' }}: кто играет?</div>
+      <div class="picks">
+        <button
+          v-for="c in active"
+          :key="c.id"
+          class="pick"
+          :class="{ on: picked.includes(c.id) }"
+          :style="{ '--c': c.color, '--t': textOn(c.color) }"
+          @click="togglePick(c.id)"
+        >
+          {{ c.name }}
+        </button>
+      </div>
+      <button class="btn primary big" :disabled="picked.length < Math.min(2, active.length)" @click="startBattle">
+        <Icon name="play" /> Начать бой №{{ br.battles.length + 1 }}
+      </button>
+      <p class="muted small">
+        Бой — {{ s.settings.brBattleQuestions || 'сколько угодно' }} вопросов{{ s.settings.brTargetScore ? ` или до ${s.settings.brTargetScore} очков` : '' }}.
+        За победу — +{{ s.settings.brWinPoints }} в турнирную таблицу. Предложена пара, которая ещё не встречалась.
+      </p>
     </div>
 
     <div v-if="br.question" class="q-grid">
@@ -93,10 +179,13 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
     </div>
 
     <div class="control card">
-      <template v-if="br.stage === 'idle'">
+      <template v-if="br.stage === 'idle' && battle">
         <button class="btn primary huge" :disabled="atEnd && br.qIndex >= 0" @click="next">
-          <Icon name="play" /> {{ br.qIndex >= 0 ? 'Следующий вопрос' : 'Первый вопрос' }} <span class="kbd">Enter</span>
+          <Icon name="play" /> Первый вопрос боя <span class="kbd">Enter</span>
         </button>
+      </template>
+      <template v-else-if="needsSetup">
+        <p class="muted">Выберите команды и начните бой.</p>
       </template>
 
       <template v-else-if="br.stage === 'reading'">
@@ -139,33 +228,48 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
         <div class="result" :class="br.answeredBy ? 'ok' : 'burned'">
           {{ br.answeredBy ? `Верно ответили: ${nameOf(br.answeredBy)}` : 'Вопрос не взят' }}
         </div>
-        <button class="btn primary huge" :disabled="atEnd" @click="next">
+        <button v-if="!battle?.tie" class="btn primary huge" :disabled="atEnd" @click="next">
           <Icon name="next" /> Следующий вопрос <span class="kbd">Enter</span>
         </button>
         <p v-if="atEnd" class="muted">Вопросы в пакете закончились.</p>
       </template>
 
       <template v-else-if="br.stage === 'finished'">
-        <div class="result ok">{{ br.winnerId ? `Победа: ${nameOf(br.winnerId)}!` : 'Бой завершён вничью' }}</div>
+        <div class="result ok">{{ br.winnerId ? `Победитель турнира: ${nameOf(br.winnerId)}!` : 'Итоги турнира' }}</div>
         <div class="row wrap">
-          <button class="btn primary big" @click="run('br.newBattle')"><Icon name="refresh" /> Новый бой</button>
-          <button class="btn big" @click="run('br.continue')">Продолжить этот бой</button>
+          <button class="btn big" @click="run('br.continue')"><Icon name="play" /> Продолжить турнир</button>
         </div>
       </template>
 
       <div v-if="falseStarters.length" class="fs">Фальстарт: {{ falseStarters.join(', ') }}</div>
     </div>
 
-    <div class="scores">
-      <div v-for="c in s.competitors" :key="c.id" class="sc" :style="{ '--c': c.color }">
-        <span class="grow ellipsis">{{ c.name }}</span>
-        <b class="nums">{{ fmtScore(c.score) }}</b>
+    <div class="card table-card">
+      <div class="label">
+        Турнирная таблица
+        <span class="faint">
+          · {{ s.settings.brTotal === 'sum' ? 'очки = взятые вопросы + очки за победы' : 'очки — только за победы и ничьи' }}
+        </span>
+      </div>
+      <BrStandings
+        :standings="br.standings"
+        :competitors="s.competitors"
+        :highlight="battle?.teams ?? []"
+        :winner-id="br.stage === 'finished' ? br.winnerId : null"
+      />
+    </div>
+
+    <div v-if="br.battles.length" class="history">
+      <div class="label">Бои</div>
+      <div v-for="bt in [...br.battles].reverse().slice(0, 12)" :key="bt.no" class="h-row">
+        <span class="faint nums">№{{ bt.no }}</span>
+        <span>{{ bt.teams.map((id) => `${nameOf(id)} ${bt.scores[id] ?? 0}`).join(' — ') }}</span>
+        <span class="faint">· {{ bt.winnerId ? `победа ${nameOf(bt.winnerId)}` : 'ничья' }}</span>
       </div>
     </div>
-    <p v-if="s.settings.brTargetScore" class="muted small">Бой идёт до {{ s.settings.brTargetScore }} очков.</p>
 
     <div v-if="history.length" class="history">
-      <div class="label">История</div>
+      <div class="label">Вопросы</div>
       <div v-for="(h, i) in history" :key="i" class="h-row">
         <span class="faint nums">№{{ h.index + 1 }}</span>
         <span>{{ RESULT[h.result] }}</span>
@@ -192,6 +296,67 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
 </template>
 
 <style scoped>
+.battle-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.bt {
+  flex: 1 1 160px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: var(--c);
+  color: var(--t);
+  font-weight: 800;
+  font-size: 1.2rem;
+}
+.bt.lead {
+  box-shadow: 0 0 0 3px var(--accent);
+}
+.bt-score {
+  font-size: 2rem;
+}
+.tie,
+.battle-end,
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.be-winner {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--accent);
+}
+.picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pick {
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 2px solid var(--c);
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+}
+.pick.on {
+  background: var(--c);
+  color: var(--t);
+}
+.table-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .br {
   display: flex;
   flex-direction: column;
@@ -316,26 +481,6 @@ const mediaPlaying = computed(() => (props.hostPlays ? br.value.stage === 'readi
 .fs {
   color: #ff9a9a;
   font-weight: 700;
-}
-.scores {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.sc {
-  flex: 1 1 160px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-radius: 12px;
-  background: var(--panel-2);
-  border-left: 6px solid var(--c);
-  font-size: 1.2rem;
-}
-.sc b {
-  font-size: 1.6rem;
-  color: var(--accent);
 }
 .history {
   display: flex;

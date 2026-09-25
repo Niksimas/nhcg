@@ -175,7 +175,15 @@ export function soundForEvent(name: string, data: { type?: string; resumed?: boo
       return 'win'
     case 'finalQuestion':
     case 'brQuestion':
+    case 'assignStart':
+    case 'battleStart':
       return 'select'
+    case 'theme':
+      return 'special'
+    case 'battleEnd':
+      return 'win'
+    case 'battleTie':
+      return 'warn'
     default:
       return null
   }

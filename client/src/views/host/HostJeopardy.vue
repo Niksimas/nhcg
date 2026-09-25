@@ -6,6 +6,8 @@ import BoardGrid from '../../components/BoardGrid.vue'
 import Icon from '../../components/Icon.vue'
 import HostJQuestion from './HostJQuestion.vue'
 import HostJFinal from './HostJFinal.vue'
+import HostJSport from './HostJSport.vue'
+import { KIND_TITLE, kindSuffix } from '../../lib/rules'
 import { useHost } from './ctx'
 
 defineProps<{ hostPlays: boolean }>()
@@ -15,11 +17,17 @@ const j = computed(() => s.value.jeopardy!)
 const comps = computed(() => competitorMap(s.value))
 const chooser = computed(() => (j.value.chooserId ? comps.value.get(j.value.chooserId) : undefined))
 const standings = computed(() => [...s.value.competitors].sort((a, b) => b.score - a.score))
-const isLastRound = computed(() => j.value.roundIndex >= j.value.rounds.length - 1)
+const sport = computed(() => j.value.format === 'sport')
+// Следующий раунд, который играется в этом формате (финал со ставками спортивный формат пропускает).
+const nextRound = computed(() => {
+  const i = j.value.rounds.findIndex((r, idx) => idx > j.value.roundIndex && !r.skip)
+  return i >= 0 ? j.value.rounds[i] : null
+})
 
 async function goRound(index: number) {
   if (index === j.value.roundIndex && j.value.stage !== 'results') return
-  if (j.value.stage === 'question' && !confirm('Идёт вопрос. Перейти к другому раунду?')) return
+  const q = j.value.question
+  if (j.value.stage === 'question' && q?.step !== 'reveal' && !confirm('Идёт вопрос. Перейти к другому раунду?')) return
   await run('j.round', { index })
 }
 
@@ -32,22 +40,27 @@ async function select(id: string, played: boolean) {
 <template>
   <div class="jeo">
     <div class="rounds">
-      <button
-        v-for="(r, i) in j.rounds"
-        :key="i"
-        class="round-tab"
-        :class="{ on: i === j.roundIndex && j.stage !== 'results', done: r.complete, final: r.type === 'final' }"
-        @click="goRound(i)"
-      >
-        {{ r.name }}
-        <span v-if="r.complete" class="faint">✓</span>
-      </button>
+      <template v-for="(r, i) in j.rounds" :key="i">
+        <button
+          v-if="!r.skip"
+          class="round-tab"
+          :class="{ on: i === j.roundIndex && j.stage !== 'results', done: r.complete, final: r.type === 'final' }"
+          :title="r.kind ? `${KIND_TITLE[r.kind]} раунд` : ''"
+          @click="goRound(i)"
+        >
+          {{ r.name }}
+          <span v-if="kindSuffix(r.name, r.kind)" class="kind-tag">{{ kindSuffix(r.name, r.kind) }}</span>
+          <span v-if="r.complete" class="faint">✓</span>
+        </button>
+      </template>
       <button class="round-tab" :class="{ on: j.stage === 'results' }" @click="j.stage !== 'results' && run('j.results')">
         <Icon name="trophy" /> Итоги
       </button>
     </div>
 
-    <template v-if="j.stage === 'board' && j.board">
+    <HostJSport v-if="sport && (j.stage === 'board' || j.stage === 'assign' || j.stage === 'theme')" />
+
+    <template v-else-if="j.stage === 'board' && j.board">
       <div class="board-head">
         <div v-if="chooser" class="chooser" :style="{ '--c': chooser.color, '--t': textOn(chooser.color) }">
           Выбирает: <b>{{ chooser.name }}</b>
@@ -66,8 +79,8 @@ async function select(id: string, played: boolean) {
 
     <div v-else-if="j.stage === 'roundEnd'" class="card center-card">
       <h2>Раунд «{{ j.rounds[j.roundIndex]?.name }}» окончен</h2>
-      <button v-if="!isLastRound" class="btn primary huge" @click="run('j.nextRound')">
-        <Icon name="next" /> Следующий раунд: {{ j.rounds[j.roundIndex + 1]?.name }} <span class="kbd">Enter</span>
+      <button v-if="nextRound" class="btn primary huge" @click="run('j.nextRound')">
+        <Icon name="next" /> Следующий раунд: {{ nextRound.name }} <span class="kbd">Enter</span>
       </button>
       <button v-else class="btn primary huge" @click="run('j.results')"><Icon name="trophy" /> Итоги игры</button>
     </div>
@@ -118,6 +131,11 @@ async function select(id: string, played: boolean) {
   background: var(--accent);
   color: var(--accent-text);
   border-color: transparent;
+}
+.kind-tag {
+  font-size: 0.72em;
+  font-weight: 600;
+  opacity: 0.75;
 }
 .round-tab.final:not(.on) {
   border-color: rgba(255, 200, 61, 0.5);

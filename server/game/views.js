@@ -59,7 +59,7 @@ export function buildViews(game) {
       color: p.color,
       connected: game.isConnected(p.id),
     })),
-    teams: s.teams.map((t) => ({ id: t.id, name: t.name, color: t.color })),
+    teams: s.teams.map((t) => ({ id: t.id, name: t.name, color: t.color, captainId: game.captainOf(t.id) })),
     competitors,
     buzzer,
     timers: s.timers,
@@ -103,7 +103,8 @@ export function buildViews(game) {
       delta: idx >= 0 ? buzzer.ranking[idx].delta : null,
       reaction: idx >= 0 ? buzzer.ranking[idx].reaction : null,
       isWinner: !!cid && b.winner?.competitorId === cid,
-      jeopardy: isJ ? game.modes.jeopardy.meView(cid) : null,
+      jeopardy: isJ ? game.modes.jeopardy.meView(cid, p.id) : null,
+      brainring: isJ ? null : game.modes.brainring.meView(cid),
     }
   }
 

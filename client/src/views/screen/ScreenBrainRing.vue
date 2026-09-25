@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { BrainRingView, GameState } from '../../lib/types'
 import { competitorMap, fmtScore, textOn, timerLeft } from '../../lib/util'
 import ContentView from '../../components/ContentView.vue'
+import BrStandings from '../../components/BrStandings.vue'
 
 const props = defineProps<{
   state: GameState
@@ -42,43 +43,77 @@ const status = computed(() => {
       return br.answeredBy
         ? { text: `Верно! ${nameOf(br.answeredBy)} +${lastValue.value}`, cls: 'correct' }
         : { text: br.carry ? `Вопрос не взят — очки переходят дальше` : 'Вопрос не взят', cls: 'burned' }
+    case 'battleEnd': {
+      const last = br.lastBattle
+      return {
+        text: last?.winnerId ? `Бой №${last.no}: победа «${nameOf(last.winnerId)}»` : `Бой №${last?.no ?? ''}: ничья`,
+        cls: 'finished',
+      }
+    }
     case 'finished':
-      return { text: br.winnerId ? `Победа: ${nameOf(br.winnerId)}!` : 'Бой завершён', cls: 'finished' }
+      return { text: br.winnerId ? `Победитель турнира: ${nameOf(br.winnerId)}!` : 'Итоги турнира', cls: 'finished' }
     default:
       return { text: '', cls: '' }
   }
 })
 const lastValue = computed(() => props.br.history[props.br.history.length - 1]?.value ?? props.br.value)
-const showContent = computed(() => props.br.question?.content && (props.br.showQuestion || props.br.stage === 'reveal'))
+const revealed = computed(() => props.br.stage === 'reveal' || props.br.stage === 'battleEnd')
+const showContent = computed(() => props.br.question?.content && (props.br.showQuestion || revealed.value))
+// Во время боя на экране — только его команды со счётом боя; между боями — турнирная таблица.
+const battle = computed(() => props.br.battle)
+const shownTeams = computed(() => {
+  const ids = battle.value?.teams ?? props.br.lastBattle?.teams ?? null
+  return ids ? props.state.competitors.filter((c) => ids.includes(c.id)) : props.state.competitors
+})
+const scoreOf = (id: string) => {
+  const bt = battle.value ?? props.br.lastBattle
+  return bt ? bt.scores[id] ?? 0 : props.state.competitors.find((c) => c.id === id)?.score ?? 0
+}
+const showTable = computed(() => !battle.value && (props.br.stage === 'idle' || props.br.stage === 'finished'))
+const battleInfo = computed(() => {
+  const bt = battle.value
+  if (!bt) return ''
+  const n = Math.max(1, bt.played + (['reading', 'armed', 'answering'].includes(props.br.stage) ? 1 : 0))
+  if (!bt.limit) return `Бой №${bt.no} · вопрос ${n}`
+  return n > props.state.settings.brBattleQuestions ? `Бой №${bt.no} · дополнительный вопрос` : `Бой №${bt.no} · вопрос ${n} из ${bt.limit}`
+})
 const mediaPlaying = computed(() => !props.mediaPaused && (props.br.stage === 'reading' || props.br.stage === 'armed'))
-const cols = computed(() => Math.min(4, Math.max(2, props.state.competitors.length)))
+const cols = computed(() => Math.min(4, Math.max(2, shownTeams.value.length)))
 </script>
 
 <template>
   <div class="br">
     <header class="head">
       <span class="label-big">Брейн-ринг</span>
-      <span v-if="br.qIndex >= 0" class="qnum">
-        Вопрос №{{ br.qIndex + 1 }}<template v-if="br.total"> из {{ br.total }}</template>
-      </span>
-      <span v-if="br.value > 1 && br.stage !== 'finished'" class="value">Стоимость: {{ br.value }}</span>
+      <span v-if="battle" class="qnum">{{ battleInfo }}</span>
+      <span v-if="br.value > 1 && battle" class="value">Стоимость: {{ br.value }}</span>
     </header>
 
-    <div class="teams" :style="{ '--cols': cols }">
+    <div v-if="showTable" class="table-wrap">
+      <div class="status finished">{{ status.text }}</div>
+      <BrStandings
+        :standings="br.standings"
+        :competitors="state.competitors"
+        variant="screen"
+        :winner-id="br.stage === 'finished' ? br.winnerId : null"
+      />
+    </div>
+
+    <div v-else class="teams" :style="{ '--cols': cols }">
       <div
-        v-for="c in state.competitors"
+        v-for="c in shownTeams"
         :key="`${c.id}-${flash[c.id] ?? 0}`"
         class="team"
         :class="{
           active: c.id === answeringId,
           locked: b.lockedOut.includes(c.id),
-          winner: br.stage === 'finished' && br.winnerId === c.id,
+          winner: br.stage === 'battleEnd' && br.lastBattle?.winnerId === c.id,
           flash: !!flash[c.id],
         }"
         :style="{ '--c': c.color, '--t': textOn(c.color) }"
       >
         <div class="team-name ellipsis">{{ c.name }}</div>
-        <div class="team-score nums">{{ fmtScore(c.score) }}</div>
+        <div class="team-score nums">{{ fmtScore(scoreOf(c.id)) }}</div>
         <div v-if="b.falseStarts.includes(c.id)" class="tag bad">Фальстарт</div>
         <div v-else-if="b.lockedOut.includes(c.id)" class="tag">Ответ неверный</div>
         <div v-else-if="c.id === answeringId" class="tag on">Отвечает!</div>
@@ -86,7 +121,7 @@ const cols = computed(() => Math.min(4, Math.max(2, props.state.competitors.leng
       </div>
     </div>
 
-    <div class="middle">
+    <div v-if="!showTable" class="middle">
       <div class="clock" :class="[status.cls, { warn: br.stage === 'armed' && left <= 10000 }]">
         <svg viewBox="0 0 200 200">
           <circle cx="100" cy="100" :r="R" class="track" />
@@ -104,20 +139,20 @@ const cols = computed(() => Math.min(4, Math.max(2, props.state.competitors.leng
       <div class="status" :class="status.cls">{{ status.text }}</div>
     </div>
 
-    <div v-if="showContent || (br.stage === 'reveal' && br.question?.answer)" class="question" :class="{ reveal: br.stage === 'reveal' }">
+    <div v-if="!showTable && (showContent || (revealed && br.question?.answer))" class="question" :class="{ reveal: revealed }">
       <ContentView
         v-if="showContent"
         :items="br.question?.content"
         variant="screen"
-        :compact="br.stage === 'reveal'"
+        :compact="revealed"
         :playing="mediaPlaying"
         :replay-key="replayKey"
       />
-      <div v-if="br.stage === 'reveal' && br.question?.answer" class="answer">
+      <div v-if="revealed && br.question?.answer" class="answer">
         Ответ: <b>{{ br.question.answer }}</b>
       </div>
       <ContentView
-        v-if="br.stage === 'reveal' && br.question?.answerContent?.length"
+        v-if="revealed && br.question?.answerContent?.length"
         :items="br.question.answerContent"
         variant="screen"
         compact
@@ -128,6 +163,17 @@ const cols = computed(() => Math.min(4, Math.max(2, props.state.competitors.leng
 </template>
 
 <style scoped>
+.table-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2vh;
+  width: min(1200px, 100%);
+  margin: 0 auto;
+  overflow: hidden;
+}
+
 .br {
   height: 100%;
   display: flex;

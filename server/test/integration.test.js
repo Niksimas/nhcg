@@ -56,6 +56,8 @@ test('полный цикл: ведущий, два игрока, «Своя и�
   assert.equal(ack.result, 'test')
   await host.wait((m) => m.t === 'event' && m.name === 'test')
 
+  // Телевизионный формат: табло и цены из пакета (спортивный проверяется в game.test.js).
+  await host.cmd('settings.update', { patch: { jFormat: 'tv' } })
   await host.cmd('pack.load', { packId: 'demo-svoya-igra' })
   await host.cmd('game.start')
   await host.waitState((s) => s.stage === 'game' && s.jeopardy?.stage === 'board')

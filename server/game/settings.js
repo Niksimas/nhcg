@@ -16,6 +16,21 @@ export const SETTINGS_SPEC = {
   joinLocked: { type: 'bool', def: false },
 
   // «Своя игра»
+  // Формат: sport — спортивный (как «Эрудит-квартет»: темы по 5 вопросов подряд, 10–50 очков, раунды открытый,
+  // полуоткрытый, закрытый и командирский, от команды за столом один игрок); tv — как в телепередаче
+  // (табло, кот в мешке, аукцион, финал со ставками).
+  jFormat: { type: 'enum', def: 'sport', values: ['sport', 'tv'] },
+  // Стоимость вопросов темы в спортивном формате: 10–50, 1–5, 100–500 или как в пакете.
+  jPrices: { type: 'enum', def: 'x10', values: ['x10', 'x1', 'x100', 'pack'] },
+  // Кто от команды играет тему: один игрок (его выбирает капитан) или вся команда.
+  jTableMode: { type: 'enum', def: 'one', values: ['one', 'team'] },
+  // Время капитанам на выбор игроков: на весь раунд (открытый, закрытый) и на одну тему (полуоткрытый).
+  jAssignRoundTime: { type: 'int', def: 60, min: 0, max: 600 },
+  jAssignThemeTime: { type: 'int', def: 20, min: 0, max: 600 },
+  // Игрок играет не больше одной темы за раунд (если в команде хватает игроков на все темы).
+  jOnePerPlayer: { type: 'bool', def: true },
+  // Кот в мешке, аукцион и вопрос без риска в спортивном формате (в телевизионном — всегда как в пакете).
+  jSpecials: { type: 'bool', def: false },
   jBuzzTime: { type: 'int', def: 10, min: 0, max: 600 },
   jAnswerTime: { type: 'int', def: 15, min: 0, max: 600 },
   jWrongPenalty: { type: 'bool', def: true },
@@ -30,7 +45,16 @@ export const SETTINGS_SPEC = {
   brAfterWrongMode: { type: 'enum', def: 'atLeast', values: ['atLeast', 'fixed', 'remaining'] },
   brAnswerTime: { type: 'int', def: 0, min: 0, max: 600 },
   brTargetScore: { type: 'int', def: 0, min: 0, max: 1000 },
-  brCarryOver: { type: 'bool', def: true },
+  // Бой: сколько вопросов (0 — без ограничения), сколько турнирных очков за победу и за ничью.
+  brBattleQuestions: { type: 'int', def: 5, min: 0, max: 100 },
+  brWinPoints: { type: 'num', def: 1, min: 0, max: 100, step: 0.5 },
+  brDrawPoints: { type: 'num', def: 0, min: 0, max: 100, step: 0.5 },
+  // Ничья после всех вопросов боя: extra — дополнительный вопрос до первого верного ответа,
+  // draw — ничья, ask — решает ведущий.
+  brTieMode: { type: 'enum', def: 'extra', values: ['extra', 'draw', 'ask'] },
+  // Сквозной счёт турнира: sum — взятые вопросы во всех боях + очки за победы; wins — только очки за победы.
+  brTotal: { type: 'enum', def: 'sum', values: ['sum', 'wins'] },
+  brCarryOver: { type: 'bool', def: false },
   brQuestionValue: { type: 'int', def: 1, min: 1, max: 1000 },
   brAutoShowQuestion: { type: 'bool', def: false },
   brShowAnswer: { type: 'bool', def: true },
@@ -50,6 +74,12 @@ function sanitizeValue(spec, value) {
       const n = typeof value === 'string' ? Number(value) : value
       if (typeof n !== 'number' || !Number.isFinite(n)) return undefined
       return Math.min(spec.max, Math.max(spec.min, Math.round(n)))
+    }
+    case 'num': {
+      const n = typeof value === 'string' ? Number(value.replace(',', '.')) : value
+      if (typeof n !== 'number' || !Number.isFinite(n)) return undefined
+      const stepped = Math.round(n / spec.step) * spec.step
+      return Math.min(spec.max, Math.max(spec.min, stepped))
     }
     case 'enum':
       return spec.values.includes(value) ? value : undefined

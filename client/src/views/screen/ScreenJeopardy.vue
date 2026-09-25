@@ -6,6 +6,7 @@ import BoardGrid from '../../components/BoardGrid.vue'
 import ContentView from '../../components/ContentView.vue'
 import ScoreStrip from '../../components/ScoreStrip.vue'
 import TimerBar from '../../components/TimerBar.vue'
+import { kindSuffix } from '../../lib/rules'
 
 const props = defineProps<{
   state: GameState
@@ -33,6 +34,22 @@ const final = computed(() => props.j.final)
 const standings = computed(() => [...props.state.competitors].sort((a, b) => b.score - a.score))
 const podium = computed(() => standings.value.slice(0, 3))
 
+// Спортивный формат: кто за столом, объявленная тема, выбор игроков.
+const kindLabel = computed(() => {
+  const w = kindSuffix(round.value?.name, props.j.kind)
+  return w ? `${w} раунд` : ''
+})
+const tableList = computed(() =>
+  props.j.table
+    ? props.state.teams
+        .filter((t) => props.j.table?.[t.id])
+        .map((t) => ({ id: t.id, color: t.color, team: t.name, name: props.j.table?.[t.id]?.name ?? '' }))
+    : [],
+)
+const theme = computed(() => (props.j.themeIndex != null ? props.j.board?.[props.j.themeIndex] ?? null : null))
+const phase = computed(() => props.j.phase)
+const teamsInPlay = computed(() => props.state.teams.filter((t) => props.state.players.some((p) => p.teamId === t.id)))
+
 const SPECIAL: Record<string, { title: string; icon: string }> = {
   cat: { title: 'Кот в мешке', icon: '🐱' },
   auction: { title: 'Аукцион', icon: '💰' },
@@ -43,8 +60,61 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 <template>
   <div class="jeo">
     <!-- Табло -->
-    <template v-if="j.stage === 'board' && j.board">
-      <div class="round-title">{{ round?.name }}</div>
+    <!-- Капитаны выбирают игроков (спортивный формат) -->
+    <template v-if="j.stage === 'assign' && phase">
+      <div class="round-title">{{ round?.name }} <span v-if="kindLabel" class="kind">· {{ kindLabel }}</span></div>
+      <div class="assign-card">
+        <template v-if="phase.scope === 'theme'">
+          <div class="muted-label">Тема</div>
+          <div class="theme-big">{{ phase.themes[0]?.name ?? '…' }}</div>
+          <div class="assign-sub">Капитаны выбирают, кто будет играть эту тему</div>
+        </template>
+        <template v-else>
+          <div class="assign-sub">Капитаны распределяют игроков по темам</div>
+          <div class="slots">
+            <div v-for="t in phase.themes" :key="t.index" class="slot" :class="{ secret: !t.name }">
+              {{ t.name ?? `Тема ${t.index + 1}` }}
+            </div>
+          </div>
+          <div v-if="phase.themes.some((t) => !t.name)" class="muted-label">Названия тем откроются, когда игроки сядут за стол</div>
+        </template>
+        <TimerBar v-if="state.timers.assign" class="assign-timer" :timer="state.timers.assign" :now="now" big :warn-at="5000" />
+        <div class="ready-row">
+          <span
+            v-for="t in teamsInPlay"
+            :key="t.id"
+            class="ready-chip"
+            :class="{ on: phase.ready.includes(t.id) }"
+            :style="{ '--c': t.color, '--t': textOn(t.color) }"
+          >
+            {{ t.name }} {{ phase.ready.includes(t.id) ? '✓' : '…' }}
+          </span>
+        </div>
+      </div>
+    </template>
+
+    <!-- Тема объявлена (спортивный формат) -->
+    <template v-else-if="j.stage === 'theme' && theme">
+      <div class="round-title">{{ round?.name }} <span v-if="kindLabel" class="kind">· {{ kindLabel }}</span></div>
+      <div class="assign-card">
+        <div class="muted-label">Тема</div>
+        <div class="theme-big">{{ theme.name ?? '…' }}</div>
+        <div class="prices nums">
+          <span v-for="qq in theme.questions" :key="qq.id" class="price-chip" :class="{ played: qq.played }">{{ qq.price }}</span>
+        </div>
+        <div v-if="tableList.length" class="table-list">
+          <div class="muted-label">За столом</div>
+          <div class="ready-row">
+            <span v-for="t in tableList" :key="t.id" class="ready-chip on" :style="{ '--c': t.color, '--t': textOn(t.color) }">
+              {{ t.name }} <span class="faint-team">· {{ t.team }}</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template v-else-if="j.stage === 'board' && j.board">
+      <div class="round-title">{{ round?.name }} <span v-if="kindLabel" class="kind">· {{ kindLabel }}</span></div>
       <div class="board-wrap">
         <BoardGrid :board="j.board" variant="screen" />
       </div>
@@ -55,6 +125,11 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
       <div class="q-head">
         <span class="q-theme">{{ q.themeName }}</span>
         <span class="q-price nums">{{ q.price }}</span>
+      </div>
+      <div v-if="tableList.length" class="table-line">
+        <span v-for="t in tableList" :key="t.id" class="ready-chip on small" :style="{ '--c': t.color, '--t': textOn(t.color) }">
+          {{ t.name }}
+        </span>
       </div>
 
       <div v-if="q.step === 'special'" class="special">
@@ -189,6 +264,114 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 </template>
 
 <style scoped>
+.kind {
+  font-size: 0.6em;
+  opacity: 0.75;
+  text-transform: none;
+}
+.assign-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2.4vh;
+  text-align: center;
+  width: min(1300px, 100%);
+  margin: 0 auto;
+}
+.assign-timer {
+  width: min(900px, 90%);
+}
+.muted-label {
+  font-size: clamp(1rem, 1.8vw, 1.6rem);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.theme-big {
+  font-size: clamp(2.4rem, 6vw, 6rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 1.05;
+  color: var(--accent);
+}
+.assign-sub {
+  font-size: clamp(1.4rem, 2.8vw, 2.6rem);
+  font-weight: 800;
+}
+.slots {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.2vw;
+}
+.slot {
+  padding: 0.6em 1.2em;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--board), var(--board-2));
+  border: 1px solid var(--board-edge);
+  font-size: clamp(1.1rem, 2.2vw, 2rem);
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.slot.secret {
+  opacity: 0.75;
+  font-style: italic;
+}
+.ready-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.8vw;
+}
+.ready-chip {
+  padding: 0.35em 0.9em;
+  border-radius: 99px;
+  border: 3px solid var(--c);
+  font-size: clamp(1rem, 2vw, 1.8rem);
+  font-weight: 800;
+}
+.ready-chip.on {
+  background: var(--c);
+  color: var(--t);
+}
+.ready-chip.small {
+  font-size: clamp(0.9rem, 1.5vw, 1.3rem);
+}
+.faint-team {
+  opacity: 0.75;
+  font-weight: 600;
+}
+.prices {
+  display: flex;
+  gap: 1vw;
+}
+.price-chip {
+  padding: 0.3em 0.8em;
+  border-radius: 10px;
+  background: linear-gradient(180deg, var(--board), var(--board-2));
+  border: 1px solid var(--board-edge);
+  color: var(--accent);
+  font-size: clamp(1.4rem, 3vw, 3rem);
+  font-weight: 900;
+}
+.price-chip.played {
+  opacity: 0.3;
+}
+.table-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1vh;
+}
+.table-line {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.6vw;
+  margin-top: -1vh;
+}
+
 .jeo {
   height: 100%;
   display: flex;

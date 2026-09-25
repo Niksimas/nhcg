@@ -81,6 +81,10 @@ const CLEARS_OVERLAY = new Set([
   'finalQuestion',
   'undo',
   'gameStart',
+  'theme',
+  'assignStart',
+  'battleStart',
+  'battleEnd',
 ])
 
 function showOverlay(o: { text: string; sub?: string; color: string; kind: string }, ms: number) {

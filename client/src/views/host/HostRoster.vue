@@ -102,10 +102,14 @@ async function promote(playerId: string, role: 'host' | 'screen') {
 
 function onMore(p: PlayerInfo, ev: Event) {
   const el = ev.target as HTMLSelectElement
-  const role = el.value
+  const action = el.value
   el.value = ''
-  if (role === 'host' || role === 'screen') void promote(p.id, role)
+  if (action === 'host' || action === 'screen') void promote(p.id, action)
+  if (action === 'captain' && p.teamId) void run('team.captain', { teamId: p.teamId, playerId: p.id })
+  if (action.startsWith('team:')) setTeam(p, action.slice(5))
 }
+
+const captainOf = (teamId: string) => s.value.teams.find((t) => t.id === teamId)?.captainId ?? null
 
 function setTeam(p: PlayerInfo, teamId: string) {
   void run('player.team', { playerId: p.id, teamId: teamId || null })
@@ -242,6 +246,7 @@ const title = computed(() => {
       <div v-if="c.kind === 'team'" class="members">
         <div v-for="p in membersOf(c.id)" :key="`${p.id}-${flash[p.id] ?? 0}`" class="member" :class="{ flash: !!flash[p.id] }">
           <span class="conn-dot" :class="p.connected ? pingClass(p.id) || 'good' : 'off'" />
+          <span v-if="p.id === captainOf(c.id)" class="cap" title="Капитан команды">★</span>
           <input
             v-if="editing && editing.kind === 'player' && editing.id === p.id"
             ref="inputRef"
@@ -252,16 +257,19 @@ const title = computed(() => {
             @keydown.esc="editing = null"
             @blur="commitEdit"
           />
-          <span v-else class="grow ellipsis" @click="startEdit('player', p.id, p.name)">{{ p.name }}</span>
+          <span v-else class="grow ellipsis" :title="p.name" @click="startEdit('player', p.id, p.name)">{{ p.name }}</span>
           <span class="faint small">{{ pingText(p.id) }}</span>
-          <select class="select small team-sel" :value="p.teamId ?? ''" title="Перевести в другую команду" @change="setTeam(p, ($event.target as HTMLSelectElement).value)">
-            <option value="">без команды</option>
-            <option v-for="t in s.teams" :key="t.id" :value="t.id">{{ t.name }}</option>
-          </select>
-          <select v-if="p.connected" class="select small more-sel" value="" title="Другие действия" @change="onMore(p, $event)">
+          <select class="select small more-sel" value="" title="Капитан, другая команда, экран, пульт ведущего" @change="onMore(p, $event)">
             <option value="" disabled>⋯</option>
-            <option value="screen">Сделать экраном</option>
-            <option value="host">Сделать ведущим</option>
+            <option v-if="p.id !== captainOf(c.id)" value="captain">Сделать капитаном</option>
+            <optgroup label="Перевести в команду">
+              <option v-for="t in s.teams.filter((x) => x.id !== p.teamId)" :key="t.id" :value="`team:${t.id}`">{{ t.name }}</option>
+              <option value="team:">без команды</option>
+            </optgroup>
+            <optgroup v-if="p.connected" label="Устройство игрока">
+              <option value="screen">Сделать экраном</option>
+              <option value="host">Сделать ведущим</option>
+            </optgroup>
           </select>
           <button class="btn small flat icon" title="Удалить игрока" @click="removePlayer(p)"><Icon name="x" size="0.85em" /></button>
         </div>
@@ -484,6 +492,11 @@ const title = computed(() => {
   width: 2.6em;
   padding-left: 4px;
   padding-right: 4px;
+  flex: none;
+}
+.cap {
+  color: var(--accent);
+  font-size: 0.85rem;
   flex: none;
 }
 </style>

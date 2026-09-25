@@ -28,7 +28,11 @@ function click(id: string, played: boolean) {
 <template>
   <div class="board" :class="variant" :style="{ '--cols': cols }">
     <template v-for="(theme, ti) in board" :key="ti">
-      <div class="theme">{{ theme.name }}</div>
+      <div class="theme" :class="{ hidden: theme.hidden, current: theme.current }">
+        <span v-if="theme.name">{{ theme.name }}</span>
+        <span v-else class="secret">Тема {{ ti + 1 }}</span>
+        <span v-if="theme.hidden && theme.name && variant === 'host'" class="secret-tag" title="Игроки ещё не видят название">скрыта</span>
+      </div>
       <button
         v-for="q in theme.questions"
         :key="q.id"
@@ -61,6 +65,24 @@ function click(id: string, played: boolean) {
   background: linear-gradient(180deg, var(--board), var(--board-2));
   border: 1px solid var(--board-edge);
   min-width: 0;
+}
+.theme.current {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent) inset;
+}
+.theme.hidden .secret,
+.secret {
+  opacity: 0.6;
+  font-style: italic;
+}
+.secret-tag {
+  margin-left: 0.5em;
+  font-size: 0.7em;
+  padding: 0.1em 0.4em;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  text-transform: none;
+  font-weight: 600;
 }
 .theme {
   padding: 0.4em 0.8em;

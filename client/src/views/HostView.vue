@@ -148,13 +148,16 @@ function hotkeyAction(e: KeyboardEvent): { name: string; args?: Record<string, u
   if (s.mode === 'jeopardy' && s.jeopardy) {
     const j = s.jeopardy
     const q = j.question
+    const sport = j.format === 'sport'
     if (j.stage === 'question' && q) {
       if (key === 'space' && q.step === 'reading') return { name: 'j.arm' }
       if (key === 'enter' && q.step === 'answering') return { name: 'j.judge', args: { correct: true } }
       if (key === 'wrong' && q.step === 'answering') return { name: 'j.judge', args: { correct: false } }
       if (key === 'esc' && (q.step === 'reading' || q.step === 'buzzing')) return { name: 'j.reveal' }
-      if (key === 'enter' && q.step === 'reveal') return { name: 'j.close' }
+      if ((key === 'enter' || key === 'right') && q.step === 'reveal') return { name: sport ? 'j.next' : 'j.close' }
     }
+    // Спортивный формат: Enter — дальше по порядку (выбор игроков → тема → вопросы → следующая тема).
+    if (sport && (key === 'enter' || key === 'right') && ['assign', 'theme', 'board'].includes(j.stage)) return { name: 'j.next' }
     if (j.stage === 'roundEnd' && key === 'enter') return { name: 'j.nextRound' }
     return null
   }
@@ -164,7 +167,9 @@ function hotkeyAction(e: KeyboardEvent): { name: string; args?: Record<string, u
     if (key === 'enter' && br.stage === 'answering') return { name: 'br.judge', args: { correct: true } }
     if (key === 'wrong' && br.stage === 'answering') return { name: 'br.judge', args: { correct: false } }
     const atEnd = br.total != null && br.qIndex >= br.total - 1
-    if ((key === 'enter' || key === 'right') && (br.stage === 'reveal' || br.stage === 'idle') && !atEnd) return { name: 'br.next' }
+    // Enter — следующий вопрос боя (новый бой ведущий начинает кнопкой, выбрав команды).
+    const inBattle = !!br.battle && !br.battle.tie
+    if ((key === 'enter' || key === 'right') && (br.stage === 'reveal' || br.stage === 'idle') && inBattle && !atEnd) return { name: 'br.next' }
   }
   return null
 }

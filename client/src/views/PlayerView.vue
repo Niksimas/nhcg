@@ -12,6 +12,7 @@ import { keepAwake } from '../lib/wakeLock'
 import BuzzerButton from './player/BuzzerButton.vue'
 import JoinForm from './player/JoinForm.vue'
 import FinalPanel from './player/FinalPanel.vue'
+import CaptainAssign from './player/CaptainAssign.vue'
 import BoardGrid from '../components/BoardGrid.vue'
 import ContentView from '../components/ContentView.vue'
 import TimerBar from '../components/TimerBar.vue'
@@ -107,6 +108,8 @@ useConnMessage(conn, 'buzzAck', (msg) => {
     vibrate(160)
   }
   if (msg.result === 'falseStart') vibrate([200, 80, 200])
+  if (msg.result === 'notAtTable') showToast('Эту тему играет другой игрок вашей команды')
+  if (msg.result === 'notInBattle') showToast('Сейчас бой других команд')
 })
 
 watch(
@@ -140,6 +143,13 @@ const jq = computed(() => (jv.value?.stage === 'question' ? jv.value.question : 
 const myComp = computed(() => (me.value?.competitorId ? comps.value.get(me.value.competitorId) ?? null : null))
 const myTeam = computed(() => state.value?.teams.find((t) => t.id === me.value?.teamId) ?? null)
 const nameOf = (id: string | null | undefined) => (id ? comps.value.get(id)?.name ?? '—' : '—')
+const sport = computed(() => jv.value?.format === 'sport')
+const meJ = computed(() => me.value?.jeopardy ?? null)
+const battle = computed(() => br.value?.battle ?? null)
+const battleLine = computed(() => {
+  const bt = battle.value ?? (br.value?.stage === 'battleEnd' ? br.value.lastBattle : null)
+  return bt ? bt.teams.map((id) => `${nameOf(id)} ${bt.scores[id] ?? 0}`).join(' : ') : ''
+})
 
 // При игре по интернету кнопки открываются в назначенный момент — одновременно у всех.
 // До него показываем «Внимание…», а ровно в этот момент — «Жми!».
@@ -173,6 +183,14 @@ const button = computed<ButtonState>(() => {
   const b = s.buzzer
   if (s.settings.teamMode && !m.competitorId) {
     return { cls: 'idle', title: 'Без команды', sub: 'Выберите команду в меню ☰', active: false }
+  }
+  // Спортивная «Своя игра»: тему играет другой игрок команды.
+  if (meJ.value?.atTable === false && b.status !== 'test') {
+    return { cls: 'idle', title: 'Тему играет', sub: meJ.value.tablePlayer?.name ?? 'другой игрок', active: false }
+  }
+  // «Брейн-ринг»: бой других команд.
+  if (me.value?.brainring?.inBattle === false && b.status !== 'test') {
+    return { cls: 'idle', title: 'Сейчас играют', sub: battleLine.value.replace(/ \d+/g, '').replace(/ : /g, ' — '), active: false }
   }
   if (b.status === 'test') {
     const ok = now.value - testOkAt.value < 1300
@@ -275,6 +293,24 @@ const info = computed<Info>(() => {
     out.main = 'Ждём начала игры'
     return out
   }
+  if (jv.value && sport.value && ['board', 'assign', 'theme'].includes(jv.value.stage)) {
+    const j = jv.value
+    const round = j.rounds[j.roundIndex]
+    out.top = round?.name ?? ''
+    if (j.stage === 'assign') {
+      out.main = meJ.value?.isCaptain ? '' : 'Капитаны выбирают, кто играет темы'
+      const mine = meJ.value?.myThemes ?? []
+      if (!meJ.value?.isCaptain && mine.length) out.main += ` · вы играете: ${mine.map((t) => t.name ?? `тему ${t.index + 1}`).join(', ')}`
+    } else if (j.stage === 'theme') {
+      const theme = j.themeIndex != null ? j.board?.[j.themeIndex] : null
+      out.main = `Тема: ${theme?.name ?? '…'}`
+      if (meJ.value?.atTable === true) out.main += ' — вы за столом!'
+    } else {
+      const mine = meJ.value?.myThemes ?? []
+      out.main = mine.length ? `Ваши темы: ${mine.map((t) => t.name ?? `тема ${t.index + 1}`).join(', ')}` : 'Ждём следующую тему'
+    }
+    return out
+  }
   if (jv.value) {
     const j = jv.value
     const round = j.rounds[j.roundIndex]
@@ -307,19 +343,32 @@ const info = computed<Info>(() => {
   }
   if (br.value) {
     const b = br.value
-    if (b.stage === 'idle') {
-      out.main = 'Ждём первый вопрос'
+    if (b.stage === 'idle' && !b.battle) {
+      out.main = b.battles.length ? 'Ждём следующий бой' : 'Ждём начала боя'
       return out
     }
-    out.top = `Вопрос №${b.qIndex + 1}${b.value > 1 ? ` · стоимость ${b.value}` : ''}`
-    if (b.stage === 'reading') out.main = 'Слушайте вопрос'
+    if (b.stage === 'battleEnd' && b.lastBattle) {
+      const last = b.lastBattle
+      out.top = `Бой №${last.no}: ${last.teams.map((id) => `${nameOf(id)} ${last.scores[id] ?? 0}`).join(' : ')}`
+      out.main = last.winnerId ? `Победа: ${nameOf(last.winnerId)}` : 'Ничья'
+      out.answer = b.question?.answer ?? null
+      return out
+    }
+    const bt = b.battle
+    const n = bt ? Math.max(1, bt.played + (['reading', 'armed', 'answering'].includes(b.stage) ? 1 : 0)) : 0
+    out.top = bt
+      ? `Бой №${bt.no} · вопрос ${n}${bt.limit ? ` из ${bt.limit}` : ''}${b.value > 1 ? ` · стоимость ${b.value}` : ''}`
+      : `Вопрос №${b.qIndex + 1}${b.value > 1 ? ` · стоимость ${b.value}` : ''}`
+    if (battleLine.value) out.top += ` · ${battleLine.value}`
+    if (b.stage === 'idle') out.main = 'Ждём вопрос'
+    else if (b.stage === 'reading') out.main = 'Слушайте вопрос'
     else if (b.stage === 'armed') out.main = 'Время пошло!'
     else if (b.stage === 'answering') out.main = 'Идёт ответ'
     else if (b.stage === 'reveal') {
       out.main = b.answeredBy ? `Верно ответили: ${nameOf(b.answeredBy)}` : 'Вопрос не взят'
       out.answer = b.question?.answer ?? null
     } else if (b.stage === 'finished') {
-      out.main = b.winnerId ? `Победа: ${nameOf(b.winnerId)}` : 'Бой завершён'
+      out.main = b.winnerId ? `Победитель турнира: ${nameOf(b.winnerId)}` : 'Итоги турнира'
     }
     if (showQ && b.showQuestion && b.stage !== 'reveal') out.content = b.question?.content ?? null
     out.timer = b.stage === 'armed' || b.stage === 'answering' ? 'main' : null
@@ -340,6 +389,29 @@ async function selectQuestion(id: string) {
     await conn.act('select', { id })
   } catch (e) {
     showToast((e as Error).message)
+  }
+}
+
+// Капитан выбирает игроков на темы.
+const assignBusy = ref(false)
+async function pickPlayer(themeIndex: number, playerId: string) {
+  assignBusy.value = true
+  try {
+    await conn.act('assign', { themeIndex, playerId })
+  } catch (e) {
+    showToast((e as Error).message)
+  } finally {
+    assignBusy.value = false
+  }
+}
+async function assignReady() {
+  assignBusy.value = true
+  try {
+    await conn.act('assignReady')
+  } catch (e) {
+    showToast((e as Error).message)
+  } finally {
+    assignBusy.value = false
   }
 }
 
@@ -500,6 +572,16 @@ const pingClass = computed(() => {
           @bet="sendBet"
           @answer="sendAnswer"
         />
+        <div v-else-if="meJ?.captain" class="scroll cap-wrap">
+          <CaptainAssign
+            :captain="meJ.captain"
+            :timer="state?.timers.assign"
+            :now="now"
+            :busy="assignBusy"
+            @pick="pickPlayer"
+            @ready="assignReady"
+          />
+        </div>
         <div v-else-if="canSelect && jv?.board" class="select-board">
           <p class="center-text">Выберите вопрос:</p>
           <BoardGrid :board="jv.board" variant="phone" clickable @select="selectQuestion" />
@@ -564,6 +646,12 @@ const pingClass = computed(() => {
 </template>
 
 <style scoped>
+.cap-wrap {
+  width: 100%;
+  max-height: 100%;
+  align-self: stretch;
+}
+
 .player {
   height: 100vh;
   height: 100dvh;

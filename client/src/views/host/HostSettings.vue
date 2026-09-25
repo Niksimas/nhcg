@@ -85,7 +85,38 @@ async function newGame(keepPlayers: boolean) {
 
     <section>
       <h4>Своя игра</h4>
+      <label class="field">
+        <span>Правила</span>
+        <select class="select" :value="st.jFormat" @change="set('jFormat', ($event.target as HTMLSelectElement).value as Settings['jFormat'])">
+          <option value="sport">Спортивные: темы по 5 вопросов подряд, раунды открытый, полуоткрытый, закрытый, командирский</option>
+          <option value="tv">Как в телепередаче: табло, кот в мешке, аукцион, финал со ставками</option>
+        </select>
+      </label>
       <div class="grid">
+        <label v-if="st.jFormat === 'sport'" class="field">
+          <span>Стоимость вопросов темы</span>
+          <select class="select" :value="st.jPrices" @change="set('jPrices', ($event.target as HTMLSelectElement).value as Settings['jPrices'])">
+            <option value="x10">10, 20, 30, 40, 50</option>
+            <option value="x1">1, 2, 3, 4, 5</option>
+            <option value="x100">100, 200, 300, 400, 500</option>
+            <option value="pack">как в пакете</option>
+          </select>
+        </label>
+        <label v-if="st.jFormat === 'sport'" class="field">
+          <span>Кто от команды играет тему</span>
+          <select class="select" :value="st.jTableMode" @change="set('jTableMode', ($event.target as HTMLSelectElement).value as Settings['jTableMode'])">
+            <option value="one">один игрок — его выбирает капитан</option>
+            <option value="team">вся команда</option>
+          </select>
+        </label>
+        <label v-if="st.jFormat === 'sport'" class="field">
+          <span>Время капитанам на расстановку (открытый и закрытый раунды), с</span>
+          <input class="input" type="number" min="0" max="600" :value="st.jAssignRoundTime" @change="num('jAssignRoundTime', $event)" />
+        </label>
+        <label v-if="st.jFormat === 'sport'" class="field">
+          <span>Время капитану на выбор игрока (полуоткрытый раунд), с</span>
+          <input class="input" type="number" min="0" max="600" :value="st.jAssignThemeTime" @change="num('jAssignThemeTime', $event)" />
+        </label>
         <label class="field">
           <span>Время на нажатие кнопки, с (0 — без ограничения)</span>
           <input class="input" type="number" min="0" max="600" :value="st.jBuzzTime" @change="num('jBuzzTime', $event)" />
@@ -98,7 +129,7 @@ async function newGame(keepPlayers: boolean) {
           <span>Блокировка за раннее нажатие, мс (0 — нет)</span>
           <input class="input" type="number" min="0" max="10000" step="100" :value="st.jEarlyLockMs" @change="num('jEarlyLockMs', $event)" />
         </label>
-        <label class="field">
+        <label v-if="st.jFormat === 'tv'" class="field">
           <span>Время на ответ в финале, с</span>
           <input class="input" type="number" min="5" max="600" :value="st.jFinalTime" @change="num('jFinalTime', $event)" />
         </label>
@@ -107,22 +138,38 @@ async function newGame(keepPlayers: boolean) {
         <input type="checkbox" :checked="st.jWrongPenalty" @change="bool('jWrongPenalty', $event)" />
         Неверный ответ отнимает стоимость вопроса
       </label>
-      <label class="check">
-        <input type="checkbox" :checked="st.phoneSelect" @change="bool('phoneSelect', $event)" />
-        Выбирающий может выбрать вопрос со своего телефона
-      </label>
-      <label class="check">
-        <input type="checkbox" :checked="st.jFinalOnlyPositive" @change="bool('jFinalOnlyPositive', $event)" />
-        В финал проходят только игроки с положительным счётом
-      </label>
-      <label class="check">
-        <input
-          type="checkbox"
-          :checked="st.jNewRoundChooser === 'lowest'"
-          @change="set('jNewRoundChooser', ($event.target as HTMLInputElement).checked ? 'lowest' : 'keep')"
-        />
-        Новый раунд начинает игрок с наименьшим счётом
-      </label>
+      <template v-if="st.jFormat === 'sport'">
+        <label class="check">
+          <input type="checkbox" :checked="st.jOnePerPlayer" @change="bool('jOnePerPlayer', $event)" />
+          Каждый игрок команды играет не больше одной темы за раунд (если игроков хватает)
+        </label>
+        <label class="check">
+          <input type="checkbox" :checked="st.jSpecials" @change="bool('jSpecials', $event)" />
+          Кот в мешке, аукцион и вопрос без риска из пакета
+        </label>
+        <p class="muted note">
+          Вид раунда (открытый, полуоткрытый, закрытый, командирский) выбирается над темами раунда. По умолчанию раунды
+          идут в этом порядке.
+        </p>
+      </template>
+      <template v-else>
+        <label class="check">
+          <input type="checkbox" :checked="st.phoneSelect" @change="bool('phoneSelect', $event)" />
+          Выбирающий может выбрать вопрос со своего телефона
+        </label>
+        <label class="check">
+          <input type="checkbox" :checked="st.jFinalOnlyPositive" @change="bool('jFinalOnlyPositive', $event)" />
+          В финал проходят только игроки с положительным счётом
+        </label>
+        <label class="check">
+          <input
+            type="checkbox"
+            :checked="st.jNewRoundChooser === 'lowest'"
+            @change="set('jNewRoundChooser', ($event.target as HTMLInputElement).checked ? 'lowest' : 'keep')"
+          />
+          Новый раунд начинает игрок с наименьшим счётом
+        </label>
+      </template>
     </section>
 
     <section>
@@ -149,8 +196,35 @@ async function newGame(keepPlayers: boolean) {
           <input class="input" type="number" min="0" max="600" :value="st.brAnswerTime" @change="num('brAnswerTime', $event)" />
         </label>
         <label class="field">
-          <span>Бой до стольких очков (0 — без ограничения)</span>
+          <span>Вопросов в бою (0 — без ограничения)</span>
+          <input class="input" type="number" min="0" max="100" :value="st.brBattleQuestions" @change="num('brBattleQuestions', $event)" />
+        </label>
+        <label class="field">
+          <span>Бой до стольких очков (0 — только по числу вопросов)</span>
           <input class="input" type="number" min="0" max="1000" :value="st.brTargetScore" @change="num('brTargetScore', $event)" />
+        </label>
+        <label class="field">
+          <span>Очки в турнирную таблицу за победу в бою</span>
+          <input class="input" type="number" min="0" max="100" step="0.5" :value="st.brWinPoints" @change="num('brWinPoints', $event)" />
+        </label>
+        <label class="field">
+          <span>Очки за ничью</span>
+          <input class="input" type="number" min="0" max="100" step="0.5" :value="st.brDrawPoints" @change="num('brDrawPoints', $event)" />
+        </label>
+        <label class="field">
+          <span>Если после всех вопросов боя ничья</span>
+          <select class="select" :value="st.brTieMode" @change="set('brTieMode', ($event.target as HTMLSelectElement).value as Settings['brTieMode'])">
+            <option value="extra">дополнительный вопрос до первого верного ответа</option>
+            <option value="draw">ничья</option>
+            <option value="ask">решает ведущий</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Счёт турнира</span>
+          <select class="select" :value="st.brTotal" @change="set('brTotal', ($event.target as HTMLSelectElement).value as Settings['brTotal'])">
+            <option value="sum">сквозной: взятые вопросы во всех боях + очки за победы</option>
+            <option value="wins">только очки за победы и ничьи</option>
+          </select>
         </label>
         <label class="field">
           <span>Стоимость вопроса</span>
