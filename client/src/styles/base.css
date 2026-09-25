@@ -386,6 +386,20 @@ textarea {
   flex: none;
 }
 
+/* Кнопка, которая выглядит как ссылка внутри текста. */
+.text-link {
+  display: inline;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
 .scroll {
   overflow: auto;
   scrollbar-width: thin;

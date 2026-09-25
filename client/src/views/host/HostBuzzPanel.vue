@@ -1,9 +1,12 @@
 <script setup lang="ts">
 // Состояние кнопок: кто нажал и с каким отставанием, таймеры, блокировки.
+// На телефоне панель делится на полоску под верхней панелью (состояние и таймер) и список нажатий под игрой.
 import { computed } from 'vue'
 import { competitorMap, timerLeft } from '../../lib/util'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
+
+const props = withDefaults(defineProps<{ variant?: 'panel' | 'strip' | 'ranking' }>(), { variant: 'panel' })
 
 const { state, now, run } = useHost()
 const s = computed(() => state.value!)
@@ -35,16 +38,43 @@ const TIMER_LABEL: Record<string, string> = {
 const timers = computed(() =>
   Object.entries(s.value.timers).map(([name, t]) => ({ name, t, left: timerLeft(t, now.value) })),
 )
+// Полоска нужна, только когда кнопки открыты, идёт ответ или тикает таймер.
+const buzzing = computed(() => ['armed', 'collecting', 'answering'].includes(b.value.status))
+const stripVisible = computed(() => buzzing.value || timers.value.some((t) => t.left > 0))
+const stripText = computed(() => {
+  if (buzzing.value) return status.value.text
+  const t = timers.value.find((x) => x.left > 0)
+  return t ? TIMER_LABEL[t.name] ?? status.value.text : status.value.text
+})
 </script>
 
 <template>
-  <div class="buzz">
-    <div class="status" :class="status.cls">
+  <div v-if="props.variant === 'strip'" v-show="stripVisible" class="strip" :class="status.cls">
+    <span class="dot" />
+    <span class="grow ellipsis">{{ stripText }}</span>
+    <template v-for="{ name, t, left } in timers" :key="name">
+      <span class="t-val nums" :class="{ warn: left < 5000 && left > 0 }" :title="TIMER_LABEL[name] ?? name">
+        {{ Math.ceil(left / 1000) }} с
+      </span>
+      <button
+        v-if="left > 0"
+        class="btn small flat icon"
+        :title="t.running ? 'Пауза' : 'Продолжить'"
+        @click="run(t.running ? 'timer.pause' : 'timer.resume', { name })"
+      >
+        <Icon :name="t.running ? 'pause' : 'play'" />
+      </button>
+      <button class="btn small flat" title="Добавить 5 секунд" @click="run('timer.add', { name, seconds: 5 })">+5</button>
+    </template>
+  </div>
+
+  <div v-else-if="props.variant === 'panel' || b.ranking.length" class="buzz">
+    <div v-if="props.variant === 'panel'" class="status" :class="status.cls">
       <span class="dot" />
       {{ status.text }}
     </div>
 
-    <div v-for="{ name, t, left } in timers" :key="name" class="timer-row">
+    <div v-for="{ name, t, left } in props.variant === 'panel' ? timers : []" :key="name" class="timer-row">
       <span class="t-label">{{ TIMER_LABEL[name] ?? name }}</span>
       <span class="t-val nums" :class="{ warn: left < 5000 && left > 0 }">{{ Math.ceil(left / 1000) }} с</span>
       <button
@@ -175,5 +205,50 @@ const timers = computed(() =>
 .hint {
   font-size: 0.75rem;
   margin: 2px 0 0;
+}
+
+/* Полоска на телефоне: одна строка под верхней панелью. */
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 14px;
+  min-height: 44px;
+  font-weight: 800;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.strip .dot {
+  width: 11px;
+  height: 11px;
+  background: var(--muted);
+}
+.strip.armed {
+  background: var(--ok-soft);
+  color: var(--ok-2);
+}
+.strip.armed .dot {
+  background: var(--ok);
+  animation: pulse 0.8s infinite;
+}
+.strip.answering {
+  background: var(--gold-soft);
+  color: #92400e;
+}
+.strip.answering .dot {
+  background: var(--gold);
+}
+.strip.closed .dot {
+  background: var(--warn);
+}
+.strip .t-val {
+  font-size: 1.15rem;
+  color: var(--text);
+}
+.strip .t-val.warn {
+  color: var(--bad);
+}
+.strip .btn {
+  color: var(--text);
 }
 </style>

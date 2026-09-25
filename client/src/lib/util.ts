@@ -1,4 +1,4 @@
-import { onUnmounted, ref, type Ref } from 'vue'
+import { onMounted, onUnmounted, ref, type Ref } from 'vue'
 import type { GameConnection } from './connection'
 import type { Competitor, GameState, TimerState } from './types'
 
@@ -48,6 +48,16 @@ export function useServerNow(conn: GameConnection, interval = 100): Ref<number> 
   }, interval)
   onUnmounted(() => clearInterval(timer))
   return now
+}
+
+// Совпадает ли медиазапрос (например, «экран телефона»). Меняется при повороте и изменении размера окна.
+export function useMedia(query: string): Ref<boolean> {
+  const mq = window.matchMedia(query)
+  const matches = ref(mq.matches)
+  const update = () => (matches.value = mq.matches)
+  onMounted(() => mq.addEventListener('change', update))
+  onUnmounted(() => mq.removeEventListener('change', update))
+  return matches
 }
 
 // Подписка на сообщения соединения на время жизни компонента.

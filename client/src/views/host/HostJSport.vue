@@ -529,4 +529,31 @@ function rename(ti: number) {
 .lineup .assign-table {
   margin-top: 10px;
 }
+@media (max-width: 760px) {
+  .kinds {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+  }
+  .assign-table {
+    grid-template-columns: minmax(96px, 1fr) repeat(var(--n), minmax(118px, 1fr));
+  }
+  .assign > .btn,
+  .theme-card > .btn {
+    width: 100%;
+  }
+  .theme-card {
+    align-items: stretch;
+  }
+  .theme-title {
+    font-size: 1.5rem;
+  }
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .strike-theme {
+    padding-left: 12px;
+  }
+}
 </style>

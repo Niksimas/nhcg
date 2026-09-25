@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // «Своя игра» у ведущего: раунды, табло, вопрос, финал, итоги.
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { competitorMap, fmtScore, textOn } from '../../lib/util'
 import BoardGrid from '../../components/BoardGrid.vue'
 import Icon from '../../components/Icon.vue'
@@ -40,11 +40,26 @@ function rename(ti: number) {
   const name = askThemeName(j.value, ti)
   if (name !== null) void run('j.theme.name', { round: j.value.roundIndex, theme: ti, name })
 }
+
+// На телефоне вкладки раундов прокручиваются вбок — текущую держим на виду.
+const roundsEl = ref<HTMLElement | null>(null)
+watch(
+  () => [j.value.roundIndex, j.value.stage === 'results'],
+  () =>
+    nextTick(() => {
+      const el = roundsEl.value
+      const on = el?.querySelector<HTMLElement>('.round-tab.on')
+      if (el && on && el.scrollWidth > el.clientWidth) {
+        el.scrollTo({ left: on.offsetLeft - (el.clientWidth - on.offsetWidth) / 2, behavior: 'smooth' })
+      }
+    }),
+  { immediate: true },
+)
 </script>
 
 <template>
   <div class="jeo">
-    <div class="rounds">
+    <div ref="roundsEl" class="rounds">
       <template v-for="(r, i) in j.rounds" :key="i">
         <button
           v-if="!r.skip"
@@ -119,6 +134,7 @@ function rename(ti: number) {
   gap: 12px;
 }
 .rounds {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -211,5 +227,31 @@ function rename(ti: number) {
 }
 .place {
   width: 2em;
+}
+@media (max-width: 760px) {
+  .rounds {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    margin: 0 -14px;
+    padding: 2px 14px 8px;
+  }
+  .rounds::-webkit-scrollbar {
+    display: none;
+  }
+  .round-tab {
+    flex: none;
+    white-space: nowrap;
+  }
+  .center-card {
+    padding: 20px 16px;
+  }
+  .center-card .btn.huge,
+  .center-card .row .btn {
+    width: 100%;
+  }
+  .chooser {
+    font-size: 1rem;
+  }
 }
 </style>

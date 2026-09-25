@@ -102,6 +102,15 @@ class Session {
     return page.screenshot({ path: path.join(OUT, this.name, `${name}.png`), animations: 'disabled' })
   }
 
+  // На телефоне страница не должна прокручиваться вбок — ни целиком, ни внутри вкладок.
+  async noHScroll(page, label) {
+    const over = await page.evaluate(() => [
+      document.documentElement.scrollWidth - window.innerWidth,
+      ...[...document.querySelectorAll('.main, .side')].map((el) => el.scrollWidth - el.clientWidth),
+    ])
+    if (over.some((v) => v > 1)) this.errors.push(`[${label}] горизонтальная прокрутка: ${over.join(', ')}`)
+  }
+
   async failShots() {
     for (const [n, p] of Object.entries(this.pages)) {
       await p.screenshot({ path: path.join(OUT, this.name, `fail-${n}.png`) }).catch(() => {})
@@ -764,6 +773,106 @@ async function roomsScenario(browser, step) {
   return s.errors
 }
 
+// ───────────────────────────── Пульт ведущего на телефоне ─────────────────────────────
+async function mobileHostScenario(browser, step) {
+  const server = await startServer()
+  const s = new Session(browser, 'mobile-host')
+  const BASE = server.base
+  try {
+    step('Ведущий на телефоне: одна строка сверху, вкладки «Игра» и «Игроки» снизу')
+    const host = await s.page('host', { ...devices['iPhone 13'] })
+    await host.goto(`${BASE}/host`)
+    await host.getByText('Подключите игроков').waitFor()
+    const phones = []
+    for (const name of ['Аня', 'Борис', 'Вика']) {
+      const p = await s.page(name, { ...devices['Pixel 7'] })
+      await p.goto(`${BASE}/`)
+      await p.getByPlaceholder('Например, Аня').fill(name)
+      await p.getByRole('button', { name: 'Войти в игру' }).click()
+      await p.locator('.buzzer').waitFor()
+      phones.push(p)
+    }
+    const [anna, boris, vika] = phones
+    await host.locator('.m-tab', { hasText: 'Игроки · 3' }).waitFor()
+    await s.noHScroll(host, 'лобби')
+    await s.shot(host, 'host-lobby')
+    // Ссылка в тексте лобби открывает вкладку игроков.
+    await host.getByRole('button', { name: '«Игроки»' }).click()
+    await host.locator('.side .comp', { hasText: 'Вика' }).waitFor()
+    await s.shot(host, 'host-players')
+    await host.locator('.m-tab', { hasText: 'Игра' }).click()
+
+    step('Настройки выезжают снизу')
+    await host.locator('button[title="Настройки"]').click()
+    await host.locator('.modal').getByText('Общие').waitFor()
+    await s.shot(host, 'host-settings')
+    await host.locator('.modal button[title="Закрыть (Esc)"]').click()
+
+    step('Табло: название темы, вопрос, кнопки «Верно» и «Неверно» рядом')
+    await host.locator('.shape label.field', { hasText: 'Правила' }).locator('select').selectOption('tv')
+    await host.getByRole('button', { name: 'Начать игру' }).click()
+    await host.locator('.board').waitFor()
+    host.once('dialog', (d) => d.accept('География'))
+    await host.locator('.board .theme').first().click()
+    await host.locator('.board .theme', { hasText: 'География' }).waitFor()
+    await s.noHScroll(host, 'табло')
+    await s.shot(host, 'host-board')
+    await host.locator('.board .cell', { hasText: '100' }).first().click()
+    await host.getByRole('button', { name: 'Принимать ответы' }).click()
+    await vika.locator('.buzzer.go').waitFor()
+    await tap(vika)
+    await host.locator('.responder', { hasText: 'Вика' }).waitFor()
+    // Полоска под шапкой: идёт ответ и таймер.
+    await host.locator('.strip', { hasText: 'Идёт ответ' }).waitFor()
+    const [okBox, badBox] = await Promise.all([
+      host.getByRole('button', { name: /Верно/ }).boundingBox(),
+      host.getByRole('button', { name: /Неверно/ }).boundingBox(),
+    ])
+    if (Math.abs(okBox.y - badBox.y) > 2) s.errors.push('[host] «Верно» и «Неверно» не в одну строку')
+    await s.noHScroll(host, 'ответ')
+    await s.shot(host, 'host-answering')
+    await host.getByRole('button', { name: /Верно/ }).click()
+    await host.getByText('Вопрос сыгран').waitFor()
+    await host.getByRole('button', { name: /К табло/ }).click()
+
+    step('На вкладке «Игроки»: ручной счёт и отметка о событии в игре')
+    await host.locator('.m-tab', { hasText: 'Игроки' }).click()
+    const vikaCard = host.locator('.side .comp').filter({ has: host.locator('.comp-main .name', { hasText: 'Вика' }) })
+    await vikaCard.locator('.score', { hasText: /^100$/ }).waitFor()
+    await vikaCard.getByRole('button', { name: '+100' }).click()
+    await vikaCard.locator('.score', { hasText: /^200$/ }).waitFor()
+    // Вика выбирает следующий вопрос со своего телефона — на вкладке «Игра» появляется отметка.
+    await vika.locator('.board .cell', { hasText: '200' }).first().click()
+    await host.locator('.m-tab .alert-dot').waitFor()
+    await s.shot(host, 'host-players-alert')
+    await host.locator('.m-tab', { hasText: 'Игра' }).click()
+    await host.locator('.m-tab .alert-dot').waitFor({ state: 'detached' })
+    await host.getByRole('button', { name: 'Никто не знает — закрыть вопрос' }).click()
+    await host.getByText('Вопрос сыгран').waitFor()
+
+    step('Брейн-ринг с телефона')
+    host.once('dialog', (d) => d.accept())
+    await host.locator('.mode-select').selectOption('brainring')
+    await host.getByRole('button', { name: /Начать бой №1/ }).click()
+    await host.getByRole('button', { name: /Первый вопрос/ }).click()
+    await host.getByRole('button', { name: /ВРЕМЯ!/ }).click()
+    await boris.locator('.buzzer.go').waitFor()
+    await tap(boris)
+    await host.locator('.responder', { hasText: 'Борис' }).waitFor()
+    await s.noHScroll(host, 'брейн-ринг')
+    await s.shot(host, 'host-brainring')
+    await host.getByRole('button', { name: /Верно/ }).click()
+    await host.getByText('Верно ответили: Борис').waitFor()
+    await anna.getByText('Борис').first().waitFor()
+  } catch (err) {
+    await s.failShots()
+    throw err
+  } finally {
+    await server.stop()
+  }
+  return s.errors
+}
+
 const browser = await chromium.launch({
   executablePath: process.env.CHROMIUM_PATH || undefined,
   args: ['--autoplay-policy=no-user-gesture-required'],
@@ -775,6 +884,7 @@ for (const [title, scenario] of [
   ['Спортивная «Своя игра» командами', sportScenario],
   ['«Хамса» командами', khamsaScenario],
   ['Комнаты и игра через интернет', roomsScenario],
+  ['Пульт ведущего на телефоне', mobileHostScenario],
 ]) {
   if (process.env.E2E_ONLY && !title.includes(process.env.E2E_ONLY)) continue
   console.log(`\n${title}`)

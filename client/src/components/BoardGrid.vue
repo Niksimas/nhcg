@@ -201,6 +201,26 @@ button.theme {
   text-decoration: line-through;
 }
 
+@media (max-width: 760px) {
+  .host {
+    gap: 5px;
+  }
+  .host .theme {
+    font-size: 0.72rem;
+    padding: 0.4em 0.5em;
+    overflow-wrap: break-word;
+    hyphens: auto;
+  }
+  .host .pen {
+    display: none;
+  }
+  .host .cell {
+    font-size: 1rem;
+    min-height: 2.7em;
+    border-radius: 10px;
+  }
+}
+
 .phone {
   gap: 4px;
 }

@@ -9,7 +9,7 @@ import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 import { formatCode, roomPath } from '../../lib/room'
 
-const { state, run, openJoin, openSettings } = useHost()
+const { state, run, openJoin, openSettings, mobile, showPlayers } = useHost()
 const s = computed(() => state.value!)
 const url = computed(() => s.value.joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))
 const connected = computed(() => s.value.players.filter((p) => p.connected).length)
@@ -111,7 +111,9 @@ function openScreen() {
           </template>
           <p class="muted">
             Подключено: <b>{{ connected }}</b> {{ plural(connected, 'игрок', 'игрока', 'игроков') }}.
-            Игроки могут нажать кнопку — их имя мигнёт в списке слева.
+            Игроки могут нажать кнопку — их имя мигнёт
+            <template v-if="mobile">на вкладке <button class="text-link" @click="showPlayers">«Игроки»</button>.</template>
+            <template v-else>в списке слева.</template>
           </p>
           <div class="row wrap">
             <button class="btn" @click="openScreen"><Icon name="monitor" /> Экран для зрителей</button>
@@ -358,9 +360,29 @@ function openScreen() {
 @media (max-width: 760px) {
   .join {
     flex-direction: column;
+    align-items: stretch;
+    gap: 14px;
+  }
+  .qr-btn {
+    align-self: center;
+    width: 150px;
+  }
+  .url {
+    font-size: 1.5rem;
+  }
+  .url.code {
+    font-size: 2rem;
   }
   .modes {
     grid-template-columns: 1fr;
+  }
+  .mode {
+    padding: 12px 14px;
+  }
+  .start-row .btn,
+  .join-text .row .btn {
+    width: 100%;
+    white-space: normal;
   }
 }
 </style>

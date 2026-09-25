@@ -51,6 +51,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey, true))
 .modal {
   width: 100%;
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   display: flex;
   flex-direction: column;
   background: var(--panel);
@@ -85,5 +86,36 @@ onUnmounted(() => window.removeEventListener('keydown', onKey, true))
   border-top: 1px solid var(--line);
   background: var(--panel-2);
   border-radius: 0 0 20px 20px;
+}
+/* На телефоне окно выезжает снизу, как шторка. */
+@media (max-width: 600px) {
+  .backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .modal {
+    max-width: none !important;
+    max-height: 92vh;
+    max-height: 92dvh;
+    border-radius: 20px 20px 0 0;
+    border-bottom: none;
+    animation: sheetUp 0.2s ease;
+  }
+  .body {
+    padding: 8px 16px calc(18px + env(safe-area-inset-bottom));
+  }
+  .head {
+    padding: 12px 12px 4px 16px;
+  }
+}
+@keyframes sheetUp {
+  from {
+    transform: translateY(40px);
+    opacity: 0.6;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }
 </style>

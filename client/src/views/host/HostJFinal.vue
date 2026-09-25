@@ -248,4 +248,31 @@ async function closeAnswers() {
   gap: 12px;
   flex-wrap: wrap;
 }
+@media (max-width: 760px) {
+  .head {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 4px;
+  }
+  .head h2 {
+    flex-basis: 100%;
+    font-size: 1.4rem;
+  }
+  /* Строка участника: имя, счёт и ставка сверху, поле ставки и кнопки — под ними. */
+  .part:not(.reveal) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 5.8em 6.6em;
+    gap: 6px 10px;
+  }
+  .part:not(.reveal) > :not(:first-child):not(.bet-in) {
+    justify-self: end;
+  }
+  .part:not(.reveal) .bet-in {
+    width: 100%;
+  }
+  .actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
 </style>

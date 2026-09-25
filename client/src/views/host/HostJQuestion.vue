@@ -7,7 +7,7 @@ import { competitorMap, fmtScore, textOn, TYPE_LABEL } from '../../lib/util'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 
-const { state, run } = useHost()
+const { state, run, mobile, showPlayers } = useHost()
 const s = computed(() => state.value!)
 const j = computed(() => s.value.jeopardy!)
 const q = computed(() => j.value.question!)
@@ -187,7 +187,12 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
           {{ a.correct ? '✓' : '✗' }} {{ nameOf(a.competitorId) }} {{ a.delta > 0 ? '+' : '' }}{{ a.delta || '' }}
         </span>
       </div>
-      <p class="muted hint manual">Счёт можно поправить вручную: кнопки − / + у игрока слева (шаг — цена вопроса) или щелчок по его счёту.</p>
+      <p v-if="mobile" class="muted hint manual">
+        Счёт можно поправить вручную на вкладке
+        <span class="nowrap"><button class="text-link" @click="showPlayers">«{{ s.settings.teamMode ? 'Команды' : 'Игроки' }}»</button>:</span>
+        кнопки − / + (шаг — цена вопроса) или нажатие на счёт.
+      </p>
+      <p v-else class="muted hint manual">Счёт можно поправить вручную: кнопки − / + у игрока слева (шаг — цена вопроса) или щелчок по его счёту.</p>
     </div>
   </div>
 </template>
@@ -254,6 +259,9 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
 }
 .manual {
   margin-top: 4px;
+}
+.nowrap {
+  white-space: nowrap;
 }
 .small {
   font-size: 0.85rem;
@@ -355,5 +363,47 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
 .chip.bad {
   background: var(--bad-soft);
   color: var(--bad-2);
+}
+@media (max-width: 760px) {
+  .q-head {
+    flex-wrap: wrap;
+    row-gap: 0;
+    font-size: 1.1rem;
+  }
+  .qnum {
+    white-space: nowrap;
+  }
+  .price {
+    font-size: 1.4rem;
+  }
+  .controls {
+    align-items: stretch;
+  }
+  .read-hint {
+    font-size: 1rem;
+  }
+  .responder {
+    font-size: 1.3rem;
+    padding: 10px 14px;
+  }
+  /* «Верно» и «Неверно» рядом — под большой палец. */
+  .judge {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .judge .btn {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 92px;
+    padding: 0.5em 0.4em;
+    font-size: 1.12rem;
+  }
+  .special .btn.big {
+    width: 100%;
+  }
+  .price-input {
+    width: 100px;
+  }
 }
 </style>

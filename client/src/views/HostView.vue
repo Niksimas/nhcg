@@ -1,12 +1,12 @@
 <script setup lang="ts">
-// Панель ведущего.
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+// Панель ведущего. На телефоне — пульт: игра и список игроков на разных вкладках.
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { GameConnection } from '../lib/connection'
 import { getHostKey, setHostKey } from '../lib/api'
 import { formatCode, room, roomKey, roomPath, serverMeta } from '../lib/room'
 import { SoundEngine, soundForEvent } from '../lib/sound'
 import type { Mode } from '../lib/types'
-import { storage, timerLeft, useConnMessage, useServerNow } from '../lib/util'
+import { storage, timerLeft, useConnMessage, useMedia, useServerNow } from '../lib/util'
 import Icon from '../components/Icon.vue'
 import Modal from '../components/Modal.vue'
 import QrCode from '../components/QrCode.vue'
@@ -34,6 +34,25 @@ const toasts = ref<{ id: number; text: string; kind: 'ok' | 'err' }[]>([])
 const flash = reactive<Record<string, number>>({})
 let toastSeq = 0
 
+// Телефон: одна колонка, внизу вкладки «Игра» и «Игроки».
+const mobile = useMedia('(max-width: 760px)')
+const tab = ref<'game' | 'players'>('game')
+// Пока ведущий на вкладке «Игроки», в игре что-то произошло (нажатие, игрок выбрал вопрос) — отмечаем вкладку «Игра».
+const gameAlert = ref(false)
+function showTab(t: 'game' | 'players') {
+  tab.value = t
+  if (t === 'game') gameAlert.value = false
+}
+watch(
+  () => {
+    const s = state.value
+    return s ? [s.stage, s.buzzer.status, s.jeopardy?.stage, s.jeopardy?.question?.id, s.brainring?.stage].join('|') : ''
+  },
+  () => {
+    if (mobile.value && tab.value === 'players') gameAlert.value = true
+  },
+)
+
 function toast(text: string, kind: 'ok' | 'err' = 'ok') {
   const id = ++toastSeq
   toasts.value = [...toasts.value.slice(-3), { id, text, kind }]
@@ -60,6 +79,8 @@ provideHost({
   flash,
   openJoin: () => (modal.value = 'join'),
   openSettings: () => (modal.value = 'settings'),
+  mobile,
+  showPlayers: () => showTab('players'),
 })
 
 // Звук играет на панели ведущего, если выбран режим «вкл» или если не подключён ни один экран.
@@ -196,6 +217,15 @@ async function switchMode(m: Mode) {
   await run('mode.set', { mode: m })
 }
 
+// Выбор режима списком (на телефоне). Пока сервер не подтвердил, в списке остаётся прежний режим.
+function onModeSelect(e: Event) {
+  const el = e.target as HTMLSelectElement
+  const m = el.value as Mode
+  el.value = mode.value
+  void switchMode(m)
+}
+const playersCount = computed(() => (state.value?.settings.teamMode ? state.value.teams.length : state.value?.players.length) ?? 0)
+
 function openScreen() {
   window.open(roomPath('/screen'), 'quiz-screen', 'width=1280,height=720')
 }
@@ -242,40 +272,56 @@ function fmtTime(ts: number) {
     <template v-else>
       <header class="bar">
         <div class="brand">
-          <span class="brand-mark" />
-          <button v-if="roomCode" class="room-chip" title="Код комнаты — игроки вводят его на главной странице сайта" @click="modal = 'join'">
+          <span v-if="!(mobile && roomCode)" class="brand-mark" />
+          <button v-if="roomCode && !mobile" class="room-chip" title="Код комнаты — игроки вводят его на главной странице сайта" @click="modal = 'join'">
             <span class="room-lbl">Комната</span> <b class="nums">{{ formatCode(roomCode) }}</b>
           </button>
-          <div class="modes">
+          <div v-if="!mobile" class="modes">
             <button class="mode-btn" :class="{ on: mode === 'jeopardy' }" @click="switchMode('jeopardy')">Своя игра</button>
             <button class="mode-btn" :class="{ on: mode === 'brainring' }" @click="switchMode('brainring')">Брейн-ринг</button>
             <button class="mode-btn" :class="{ on: mode === 'khamsa' }" @click="switchMode('khamsa')">Хамса</button>
           </div>
+          <select v-else class="select mode-select" :value="mode" aria-label="Режим игры" @change="onModeSelect">
+            <option value="jeopardy">Своя игра</option>
+            <option value="brainring">Брейн-ринг</option>
+            <option value="khamsa">Хамса</option>
+          </select>
         </div>
         <div class="grow" />
-        <button class="btn small" :disabled="!state.undo" :title="state.undo ? `Отменить: ${state.undo} (Ctrl+Z)` : 'Нечего отменять'" @click="run('undo')">
-          <Icon name="undo" /> Отменить
+        <button
+          class="btn small"
+          :class="{ icon: mobile }"
+          :disabled="!state.undo"
+          :title="state.undo ? `Отменить: ${state.undo} (Ctrl+Z)` : 'Нечего отменять'"
+          @click="run('undo')"
+        >
+          <Icon name="undo" /> <template v-if="!mobile">Отменить</template>
         </button>
-        <button class="btn small icon" :title="soundTitle" @click="cycleSound">
+        <button class="btn small icon sound-btn" :title="soundTitle" @click="cycleSound">
           <Icon :name="soundMode === 'off' ? 'mute' : 'volume'" />
           <span v-if="soundMode === 'auto'" class="auto-tag">A</span>
         </button>
-        <button class="btn small" title="Открыть экран для зрителей в новом окне" @click="openScreen">
+        <button v-if="!mobile" class="btn small" title="Открыть экран для зрителей в новом окне" @click="openScreen">
           <Icon name="monitor" /> Экран
           <span v-if="state.screens" class="chip mini">{{ state.screens }}</span>
         </button>
         <button class="btn small icon" title="Настройки" @click="modal = 'settings'"><Icon name="settings" /></button>
-        <button class="join-btn" title="Как подключиться" @click="modal = 'join'">
-          <QrCode class="mini-qr" :text="state.joinUrl" />
-          <span class="join-url">{{ joinShort }}</span>
+        <!-- На телефоне в режиме комнат вместо QR-кода — код комнаты: он нужнее, окно подключения то же. -->
+        <button v-if="mobile && roomCode" class="room-chip" title="Код комнаты — как подключиться" @click="modal = 'join'">
+          <b class="nums">{{ formatCode(roomCode) }}</b>
         </button>
-        <span class="conn" :class="status" :title="status === 'online' ? 'Связь с сервером есть' : 'Нет связи'">
+        <button v-else class="join-btn" title="Как подключиться" @click="modal = 'join'">
+          <QrCode class="mini-qr" :text="state.joinUrl" />
+          <span v-if="!mobile" class="join-url">{{ joinShort }}</span>
+        </button>
+        <span v-if="!mobile || status !== 'online'" class="conn" :class="status" :title="status === 'online' ? 'Связь с сервером есть' : 'Нет связи'">
           <Icon :name="status === 'online' ? 'wifi' : 'wifiOff'" />
         </span>
       </header>
+      <HostBuzzPanel v-if="mobile" variant="strip" />
 
-      <div class="layout">
-        <aside class="side scroll">
+      <div class="layout" :class="{ m: mobile }">
+        <aside v-show="!mobile || tab === 'players'" class="side scroll">
           <HostRoster />
           <div v-if="lastLog.length" class="log">
             <div class="label">Журнал</div>
@@ -285,13 +331,14 @@ function fmtTime(ts: number) {
           </div>
         </aside>
 
-        <main class="main scroll">
+        <main v-show="!mobile || tab === 'game'" class="main scroll">
           <HostLobby v-if="state.stage === 'lobby'" />
           <HostJeopardy v-else-if="(mode === 'jeopardy' || mode === 'khamsa') && state.jeopardy" />
           <HostBrainRing v-else-if="mode === 'brainring' && state.brainring" />
+          <HostBuzzPanel v-if="mobile" variant="ranking" class="m-ranking" />
         </main>
 
-        <aside class="right scroll">
+        <aside v-if="!mobile" class="right scroll">
           <HostBuzzPanel />
           <div class="keys card">
             <div class="label">Клавиши</div>
@@ -311,6 +358,18 @@ function fmtTime(ts: number) {
           </div>
         </aside>
       </div>
+
+      <nav v-if="mobile" class="m-tabs">
+        <button class="m-tab" :class="{ on: tab === 'game' }" @click="showTab('game')">
+          <Icon name="grid" size="1.4em" />
+          <span>Игра</span>
+          <span v-if="gameAlert" class="alert-dot" title="В игре что-то произошло" />
+        </button>
+        <button class="m-tab" :class="{ on: tab === 'players' }" @click="showTab('players')">
+          <Icon name="users" size="1.4em" />
+          <span>{{ state.settings.teamMode ? 'Команды' : 'Игроки' }} · {{ playersCount }}</span>
+        </button>
+      </nav>
     </template>
 
     <Modal v-if="modal === 'settings' && state" title="Настройки" width="820px" @close="modal = null">
@@ -421,10 +480,16 @@ function fmtTime(ts: number) {
   color: var(--accent);
   box-shadow: var(--shadow-sm);
 }
+.sound-btn {
+  position: relative;
+}
 .auto-tag {
-  font-size: 0.6rem;
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  font-size: 0.55rem;
   font-weight: 900;
-  margin-left: -4px;
+  line-height: 1;
 }
 .chip.mini {
   padding: 0 0.45em;
@@ -551,16 +616,124 @@ function fmtTime(ts: number) {
     overflow: visible;
   }
 }
+
+/* ───────────── телефон: пульт ведущего ───────────── */
+.mode-select {
+  width: auto;
+  min-width: 0;
+  padding: 0.35em 2em 0.35em 0.75em;
+  border-radius: 10px;
+  border-color: transparent;
+  background-color: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 800;
+}
+.m-tabs {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background: rgba(255, 255, 255, 0.97);
+  border-top: 1px solid var(--line);
+  box-shadow: 0 -6px 18px rgba(21, 26, 45, 0.06);
+  padding-bottom: env(safe-area-inset-bottom);
+  position: relative;
+  z-index: 5;
+}
+.m-tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px 7px;
+  border: none;
+  background: none;
+  color: var(--faint);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.m-tab.on {
+  color: var(--accent);
+}
+.alert-dot {
+  position: absolute;
+  top: 6px;
+  left: calc(50% + 9px);
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bad);
+  box-shadow: 0 0 0 2px var(--panel);
+  animation: pulse 0.8s infinite;
+}
+.m-ranking {
+  margin-top: 18px;
+}
 @media (max-width: 760px) {
-  .layout {
-    grid-template-columns: 1fr;
+  /* Как приложение: шапка и вкладки на месте, прокручивается только содержимое вкладки. */
+  .host {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
   }
-  .side {
-    border-right: none;
-    border-bottom: 1px solid var(--line);
+  .bar {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: calc(6px + env(safe-area-inset-top)) 10px 6px;
   }
-  .join-url {
+  .brand {
+    gap: 8px;
+    min-width: 0;
+  }
+  .brand-mark {
+    width: 28px;
+    height: 28px;
+  }
+  .bar .btn.small {
+    font-size: 0.95rem;
+  }
+  .join-btn {
+    padding: 3px;
+  }
+  .room-chip {
+    padding: 6px 9px;
+    font-size: 1rem;
+  }
+  .mini-qr {
+    width: 30px;
+  }
+  .layout.m {
+    display: flex;
+    flex-direction: column;
+  }
+  .layout.m > .side,
+  .layout.m > .main {
+    flex: 1;
+    min-height: 0;
+    border: none;
+    background: none;
+    padding: 12px 14px 28px;
+  }
+  .toasts {
+    left: 12px;
+    right: 12px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    align-items: center;
+  }
+  /* Клавиатуры нет — подсказки клавиш не нужны, крупные кнопки переносят текст. */
+  .host :deep(.kbd) {
     display: none;
+  }
+  .host :deep(.btn.huge),
+  .host :deep(.btn.big) {
+    white-space: normal;
+    text-align: center;
+  }
+  .host :deep(.btn.huge) {
+    font-size: 1.25rem;
+    padding: 0.75em 1em;
   }
 }
 </style>

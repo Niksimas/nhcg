@@ -413,4 +413,38 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
 .small {
   font-size: 0.85rem;
 }
+@media (max-width: 760px) {
+  .control {
+    align-items: stretch;
+  }
+  .time-btn {
+    font-size: 1.9rem;
+    padding: 0.55em 1em;
+  }
+  .responder {
+    font-size: 1.3rem;
+    padding: 10px 14px;
+  }
+  .react {
+    display: block;
+    margin-left: 0;
+  }
+  /* «Верно» и «Неверно» рядом — под большой палец. */
+  .judge {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .judge .btn {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 92px;
+    padding: 0.5em 0.4em;
+    font-size: 1.12rem;
+  }
+  .setup > .btn,
+  .tie .btn {
+    width: 100%;
+  }
+}
 </style>

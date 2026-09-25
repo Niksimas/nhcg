@@ -11,6 +11,9 @@ export interface HostCtx {
   flash: Record<string, number>
   openJoin: () => void
   openSettings: () => void
+  // Панель открыта на телефоне: список игроков — на отдельной вкладке, подсказки клавиш не нужны.
+  mobile: Ref<boolean>
+  showPlayers: () => void
 }
 
 const KEY: InjectionKey<HostCtx> = Symbol('host')
