@@ -28,7 +28,7 @@ function click(id: string, played: boolean) {
 <template>
   <div class="board" :class="variant" :style="{ '--cols': cols }">
     <template v-for="(theme, ti) in board" :key="ti">
-      <div class="theme" :class="{ hidden: theme.hidden, current: theme.current }">
+      <div class="theme" :class="{ hidden: theme.hidden, current: theme.current, struck: theme.struck }">
         <span v-if="theme.name">{{ theme.name }}</span>
         <span v-else class="secret">Тема {{ ti + 1 }}</span>
         <span v-if="theme.hidden && theme.name && variant === 'host'" class="secret-tag" title="Игроки ещё не видят название">скрыта</span>
@@ -37,7 +37,12 @@ function click(id: string, played: boolean) {
         v-for="q in theme.questions"
         :key="q.id"
         class="cell nums"
-        :class="{ played: q.played, selected: q.id === selectedId, clickable: clickable && (!q.played || variant === 'host') }"
+        :class="{
+          played: q.played,
+          struck: theme.struck,
+          selected: q.id === selectedId,
+          clickable: clickable && (!q.played || variant === 'host'),
+        }"
         :disabled="!clickable || (q.played && variant !== 'host')"
         :title="q.played ? 'Вопрос сыгран' : ''"
         @click="click(q.id, q.played)"
@@ -69,6 +74,13 @@ function click(id: string, played: boolean) {
 .theme.current {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent) inset;
+}
+.theme.struck {
+  opacity: 0.35;
+  text-decoration: line-through;
+}
+.cell.struck {
+  opacity: 0.3;
 }
 .theme.hidden .secret,
 .secret {

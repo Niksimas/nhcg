@@ -1,6 +1,6 @@
 // Типы состояния, которое присылает сервер (см. server/game/views.js).
 
-export type Mode = 'jeopardy' | 'brainring'
+export type Mode = 'jeopardy' | 'brainring' | 'khamsa'
 export type Role = 'host' | 'screen' | 'player'
 export type BuzzerStatus = 'test' | 'off' | 'closed' | 'armed' | 'collecting' | 'answering'
 
@@ -28,6 +28,15 @@ export interface Settings {
   jSpecials: boolean
   jBuzzTime: number
   jAnswerTime: number
+  hPriceBase: number
+  hBuzzTime: number
+  hAnswerTime: number
+  hQueue: boolean
+  hNextTime: number
+  hWrongPenalty: boolean
+  hAssignRoundTime: number
+  hAssignThemeTime: number
+  hFinalTime: number
   jWrongPenalty: boolean
   jEarlyLockMs: number
   jFinalTime: number
@@ -145,10 +154,12 @@ export interface JBoardTheme {
   name: string | null
   hidden?: boolean
   current?: boolean
+  // вычеркнута командами (четвёртый раунд «Хамсы»)
+  struck?: boolean
   questions: JBoardCell[]
 }
 
-export type RoundKind = 'open' | 'semi' | 'closed' | 'captain'
+export type RoundKind = 'open' | 'semi' | 'closed' | 'captain' | 'leaders' | 'khamsa'
 
 export interface PlayerRef {
   playerId: string
@@ -179,8 +190,8 @@ export interface JFinal {
 }
 
 export interface JeopardyView {
-  format: 'sport' | 'tv'
-  stage: 'board' | 'assign' | 'theme' | 'question' | 'roundEnd' | 'final' | 'results'
+  format: 'sport' | 'tv' | 'khamsa'
+  stage: 'board' | 'assign' | 'strike' | 'theme' | 'question' | 'roundEnd' | 'final' | 'results'
   roundIndex: number
   rounds: { name: string; type: 'normal' | 'final'; complete: boolean; skip: boolean; kind: RoundKind | null }[]
   chooserId: string | null
@@ -189,7 +200,11 @@ export interface JeopardyView {
   themeIndex: number | null
   board: JBoardTheme[] | null
   // выбор игроков капитанами
-  phase: { scope: 'round' | 'theme'; themes: { index: number; name: string | null }[]; ready: string[] } | null
+  phase: { scope: 'round' | 'theme' | 'leader'; themes: { index: number; name: string | null }[]; ready: string[] } | null
+  // «Хамса»: номер раунда (1–5), вычёркивание тем и игроки четвёртого раунда
+  roundNumber?: number
+  strike?: { order: string[]; turn: number; current: string | null; removed: number[] } | null
+  leaders?: Record<string, PlayerRef | null>
   // кто за столом в текущей теме: команда → игрок
   table: Record<string, PlayerRef | null> | null
   // расстановка по темам раунда: команда → номер темы → игрок
@@ -328,6 +343,9 @@ export interface MeView {
     } | null
     isChooser: boolean
     canSelect: boolean
+    // «Хамса»: убрать тему может капитан или игрок четвёртого раунда; isLeader — этот игрок играет четвёртый раунд
+    canStrike?: boolean
+    isLeader?: boolean
     final: {
       participant: boolean
       bet: number | null

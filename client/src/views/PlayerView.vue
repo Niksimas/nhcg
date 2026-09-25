@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import { GameConnection } from '../lib/connection'
 import { setHostKey } from '../lib/api'
 import { formatCode, room, roomKey, roomPath, serverMeta } from '../lib/room'
+import { MODE_TITLE } from '../lib/rules'
 import { SoundEngine } from '../lib/sound'
 import type { ContentItem } from '../lib/types'
 import { competitorMap, fmtScore, storage, textOn, TYPE_LABEL, useConnMessage, useServerNow } from '../lib/util'
@@ -13,6 +14,7 @@ import BuzzerButton from './player/BuzzerButton.vue'
 import JoinForm from './player/JoinForm.vue'
 import FinalPanel from './player/FinalPanel.vue'
 import CaptainAssign from './player/CaptainAssign.vue'
+import StrikePanel from './player/StrikePanel.vue'
 import BoardGrid from '../components/BoardGrid.vue'
 import ContentView from '../components/ContentView.vue'
 import TimerBar from '../components/TimerBar.vue'
@@ -137,13 +139,13 @@ function join(payload: { name: string; teamId: string | null; newTeamName: strin
 
 const comps = computed(() => competitorMap(state.value))
 const mode = computed(() => state.value?.mode ?? 'jeopardy')
-const jv = computed(() => (mode.value === 'jeopardy' ? state.value?.jeopardy ?? null : null))
+const jv = computed(() => (mode.value !== 'brainring' ? state.value?.jeopardy ?? null : null))
 const br = computed(() => (mode.value === 'brainring' ? state.value?.brainring ?? null : null))
 const jq = computed(() => (jv.value?.stage === 'question' ? jv.value.question : null))
 const myComp = computed(() => (me.value?.competitorId ? comps.value.get(me.value.competitorId) ?? null : null))
 const myTeam = computed(() => state.value?.teams.find((t) => t.id === me.value?.teamId) ?? null)
 const nameOf = (id: string | null | undefined) => (id ? comps.value.get(id)?.name ?? '—' : '—')
-const sport = computed(() => jv.value?.format === 'sport')
+const sport = computed(() => jv.value?.format === 'sport' || jv.value?.format === 'khamsa')
 const meJ = computed(() => me.value?.jeopardy ?? null)
 const battle = computed(() => br.value?.battle ?? null)
 const battleLine = computed(() => {
@@ -166,6 +168,8 @@ watch(
 )
 
 const earlyUntil = computed(() => Math.max(me.value?.earlyLockUntil ?? 0, earlyAckUntil.value))
+// «Хамса»: пока отвечает другой, можно встать в очередь — после ошибки право ответа перейдёт к следующему нажавшему.
+const queueOpen = computed(() => mode.value === 'khamsa' && !!state.value?.settings.hQueue && jq.value?.step === 'answering')
 const earlyLeft = computed(() => Math.max(0, earlyUntil.value - now.value))
 
 interface ButtonState {
@@ -212,10 +216,14 @@ const button = computed<ButtonState>(() => {
   if (m.falseStart) return { cls: 'locked', title: 'Фальстарт', sub: 'На этот вопрос вы уже не отвечаете', active: false }
   if (m.lockedOut) return { cls: 'locked', title: 'Уже отвечали', sub: 'Ждём следующий вопрос', active: false }
   if (b.status === 'answering' && b.winner) {
+    const who = `Отвечает ${nameOf(b.winner.competitorId)}`
+    if (queueOpen.value && m.rank == null && now.value - pressedAt.value >= 800) {
+      return { cls: 'queue', title: who, sub: 'Нажмите — ответите следующим, если ошибутся', active: true }
+    }
     return {
       cls: 'other',
-      title: `Отвечает ${nameOf(b.winner.competitorId)}`,
-      sub: m.rank ? `Вы ${m.rank}-й · +${m.delta} мс` : '',
+      title: who,
+      sub: m.rank ? (queueOpen.value ? 'Вы в очереди на ответ' : `Вы ${m.rank}-й · +${m.delta} мс`) : '',
       active: false,
     }
   }
@@ -289,18 +297,22 @@ const info = computed<Info>(() => {
   if (!s) return out
   const showQ = s.settings.showQuestionOnPhones
   if (s.stage === 'lobby') {
-    out.top = s.mode === 'brainring' ? 'Брейн-ринг' : 'Своя игра'
+    out.top = MODE_TITLE[s.mode] ?? 'Своя игра'
     out.main = 'Ждём начала игры'
     return out
   }
-  if (jv.value && sport.value && ['board', 'assign', 'theme'].includes(jv.value.stage)) {
+  if (jv.value && sport.value && ['board', 'assign', 'strike', 'theme'].includes(jv.value.stage)) {
     const j = jv.value
     const round = j.rounds[j.roundIndex]
     out.top = round?.name ?? ''
-    if (j.stage === 'assign') {
+    if (j.stage === 'assign' && j.phase?.scope === 'leader') {
+      out.main = meJ.value?.isCaptain ? '' : 'Капитаны выбирают, кто сыграет этот раунд'
+    } else if (j.stage === 'assign') {
       out.main = meJ.value?.isCaptain ? '' : 'Капитаны выбирают, кто играет темы'
       const mine = meJ.value?.myThemes ?? []
       if (!meJ.value?.isCaptain && mine.length) out.main += ` · вы играете: ${mine.map((t) => t.name ?? `тему ${t.index + 1}`).join(', ')}`
+    } else if (j.stage === 'strike') {
+      out.timer = null
     } else if (j.stage === 'theme') {
       const theme = j.themeIndex != null ? j.board?.[j.themeIndex] : null
       out.main = `Тема: ${theme?.name ?? '…'}`
@@ -379,6 +391,7 @@ const info = computed<Info>(() => {
 const activeTimer = computed(() => (info.value.timer ? state.value?.timers[info.value.timer] : undefined))
 
 const canSelect = computed(() => !!me.value?.jeopardy?.canSelect && jv.value?.stage === 'board' && !!jv.value.board)
+const strike = computed(() => (jv.value?.stage === 'strike' && jv.value.board ? jv.value.strike ?? null : null))
 const final = computed(() => (jv.value?.stage === 'final' ? jv.value.final : null))
 const meFinal = computed(() => me.value?.jeopardy?.final ?? null)
 const showResults = computed(() => jv.value?.stage === 'results' || br.value?.stage === 'finished')
@@ -412,6 +425,19 @@ async function assignReady() {
     showToast((e as Error).message)
   } finally {
     assignBusy.value = false
+  }
+}
+
+// «Хамса»: команда убирает тему четвёртого раунда.
+const strikeBusy = ref(false)
+async function strikeTheme(index: number) {
+  strikeBusy.value = true
+  try {
+    await conn.act('strike', { index })
+  } catch (e) {
+    showToast((e as Error).message)
+  } finally {
+    strikeBusy.value = false
   }
 }
 
@@ -566,6 +592,7 @@ const pingClass = computed(() => {
           v-if="final && meFinal"
           :final="final"
           :me="meFinal"
+          :title="jv?.format === 'khamsa' ? jv.rounds[jv.roundIndex]?.name || 'Хамса' : 'Финал'"
           :timer="state?.timers.final"
           :now="now"
           :show-question="state?.settings.showQuestionOnPhones ?? true"
@@ -580,6 +607,17 @@ const pingClass = computed(() => {
             :busy="assignBusy"
             @pick="pickPlayer"
             @ready="assignReady"
+          />
+        </div>
+        <div v-else-if="strike && jv?.board" class="scroll cap-wrap">
+          <StrikePanel
+            :board="jv.board"
+            :can-strike="!!meJ?.canStrike"
+            :my-turn="!!me.competitorId && strike.current === me.competitorId"
+            :current="nameOf(strike.current)"
+            :is-leader="!!meJ?.isLeader"
+            :busy="strikeBusy"
+            @strike="strikeTheme"
           />
         </div>
         <div v-else-if="canSelect && jv?.board" class="select-board">

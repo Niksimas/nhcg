@@ -109,6 +109,12 @@ class Session {
 }
 
 const tap = (page) => page.locator('.buzzer').click({ force: true })
+// Счёт команды в списке у ведущего (в карточках других команд тоже встречаются названия — в списке «перевести в команду»).
+const teamScore = (page, team, score) =>
+  page
+    .locator('.comp')
+    .filter({ has: page.locator('.comp-main .name', { hasText: team }) })
+    .locator('.score', { hasText: new RegExp(`^${score}$`) })
 
 // ───────────────────────────── «Своя игра» ─────────────────────────────
 async function jeopardyScenario(browser, step) {
@@ -491,6 +497,164 @@ async function sportScenario(browser, step) {
   return s.errors
 }
 
+// ───────────────────────────── «Хамса» ─────────────────────────────
+async function khamsaScenario(browser, step) {
+  const server = await startServer()
+  const s = new Session(browser, 'khamsa')
+  const BASE = server.base
+  try {
+    step('Режим «Хамса», три команды: Альфа (Аня — капитан, Боря), Бета (Вика), Гамма (Гена)')
+    const host = await s.page('host', { viewport: { width: 1440, height: 900 } })
+    await host.goto(`${BASE}/host`)
+    await host.getByText('Подключите игроков').waitFor()
+    await host.locator('.mode', { hasText: 'Хамса' }).click()
+    await host.getByText('Командная игра').click()
+    for (const team of ['Альфа', 'Бета', 'Гамма']) {
+      await host.getByPlaceholder('Название новой команды').fill(team)
+      await host.getByPlaceholder('Название новой команды').press('Enter')
+    }
+    await host.locator('.comp', { hasText: 'Гамма' }).waitFor()
+    const phones = {}
+    for (const [name, team] of [
+      ['Аня', 'Альфа'],
+      ['Боря', 'Альфа'],
+      ['Вика', 'Бета'],
+      ['Гена', 'Гамма'],
+    ]) {
+      const p = await s.page(name, { ...devices['Pixel 7'] })
+      await p.goto(`${BASE}/`)
+      await p.getByPlaceholder('Например, Аня').fill(name)
+      await p.locator('.team', { hasText: team }).click()
+      await p.getByRole('button', { name: 'Войти в игру' }).click()
+      await p.locator('.buzzer').waitFor()
+      phones[name] = p
+    }
+    const { Аня: anna, Боря: borya, Вика: vika, Гена: gena } = phones
+    const screen = await s.page('screen', { viewport: { width: 1280, height: 720 } })
+    await screen.goto(`${BASE}/screen`)
+    await screen.getByRole('button', { name: 'Включить звук' }).click()
+
+    step('Явный раунд: капитаны расставляют игроков, вопросы от 100')
+    await host.getByRole('button', { name: 'Выбрать пакет' }).click()
+    await host.locator('.pack', { hasText: 'Демо: Хамса' }).getByRole('button', { name: 'Играть' }).click()
+    await host.getByRole('button', { name: 'Начать игру' }).click()
+    await host.getByText('Капитаны распределяют игроков по темам').first().waitFor()
+    await anna.getByText('Вы капитан — кто играет?').waitFor()
+    await anna.locator('.cap .theme', { hasText: 'Столицы' }).locator('.member', { hasText: 'Боря' }).click()
+    await anna.getByRole('button', { name: /Готово/ }).click()
+    await vika.getByRole('button', { name: /Готово/ }).click()
+    await gena.getByRole('button', { name: /Готово/ }).click()
+    await host.getByRole('button', { name: /Следующая тема: «Столицы»/ }).waitFor()
+    await screen.locator('.round-title', { hasText: 'Явный раунд' }).waitFor()
+    await host.keyboard.press('Enter')
+    await screen.getByText('За столом').waitFor()
+    await host.keyboard.press('Enter')
+    await host.locator('.q-head', { hasText: '100' }).waitFor()
+
+    step('Фальстарт: Боря нажал, пока читают вопрос, — Альфа не отвечает')
+    await tap(borya)
+    await borya.getByText('Фальстарт').waitFor()
+    await s.shot(borya, 'phone-false-start')
+
+    step('Очередь: Бета ошибается, право ответа переходит к Гамме, нажавшей следом')
+    await host.keyboard.press('Space')
+    await vika.locator('.buzzer.go').waitFor()
+    await tap(vika)
+    await host.locator('.responder', { hasText: 'Бета' }).waitFor()
+    await gena.locator('.buzzer.queue').waitFor()
+    await s.shot(gena, 'phone-queue')
+    await tap(gena)
+    await gena.getByText('Вы в очереди на ответ').waitFor()
+    await host.keyboard.press('Backspace')
+    await host.locator('.responder', { hasText: 'Гамма' }).waitFor()
+    await gena.getByText('Ваш ответ!').waitFor()
+    await host.keyboard.press('Enter')
+    await host.getByText('Ответ показан на экране').waitFor()
+    await teamScore(host, 'Гамма', '100').waitFor()
+
+    step('Четвёртый раунд: капитаны выбирают игрока, команды убирают темы с телефонов')
+    await host.locator('.round-tab', { hasText: 'Четвёртый' }).click()
+    await host.getByText('Капитаны выбирают игрока четвёртого раунда').waitFor()
+    await anna.getByText('Кто играет четвёртый раунд').waitFor()
+    await s.shot(anna, 'phone-leader')
+    await screen.getByText('Капитаны выбирают одного игрока на весь раунд').waitFor()
+    await s.shot(screen, 'screen-leader-assign')
+    await anna.locator('.cap .member', { hasText: 'Боря' }).click()
+    await anna.getByRole('button', { name: /Готово/ }).click()
+    await vika.getByRole('button', { name: /Готово/ }).click()
+    await gena.getByRole('button', { name: /Готово/ }).click()
+    // Очередь — от меньшего счёта к большему: Бета (−100), Альфа (0), Гамма (100).
+    await vika.getByText('Ваша очередь — уберите тему').waitFor()
+    await screen.getByText('Команды по очереди убирают темы').waitFor()
+    await s.shot(vika, 'phone-strike')
+    await vika.locator('.strike .theme', { hasText: 'Космос' }).click()
+    await vika.getByRole('button', { name: 'Убрать «Космос»' }).click()
+    await borya.getByText('Ваша очередь — уберите тему').waitFor()
+    await borya.locator('.strike .theme', { hasText: 'Живопись' }).click()
+    await borya.getByRole('button', { name: 'Убрать «Живопись»' }).click()
+    await gena.getByText('Ваша очередь — уберите тему').waitFor()
+    await gena.locator('.strike .theme', { hasText: 'Компьютеры' }).click()
+    await gena.getByRole('button', { name: /Убрать «Компьютеры/ }).click()
+    await screen.locator('.strike-theme.struck', { hasText: 'Компьютеры' }).waitFor()
+    await s.shot(screen, 'screen-strike')
+    await s.shot(host, 'host-strike')
+    await host.locator('.strike-theme', { hasText: 'Архитектура' }).click()
+    await screen.locator('.theme-big', { hasText: 'Мифология' }).waitFor()
+    await borya.getByText(/Мифология — вы за столом/).waitFor()
+    await s.shot(screen, 'screen-leader-theme')
+
+    step('Тему играет выбранный игрок: 400 очков')
+    await host.keyboard.press('Enter')
+    await host.locator('.q-head', { hasText: '400' }).waitFor()
+    await host.keyboard.press('Space')
+    await anna.getByText('Тему играет').waitFor()
+    await borya.locator('.buzzer.go').waitFor()
+    await tap(borya)
+    await host.locator('.responder', { hasText: 'Альфа' }).waitFor()
+    await host.keyboard.press('Enter')
+    await host.getByText('Ответ показан на экране').waitFor()
+    await teamScore(host, 'Альфа', '400').waitFor()
+
+    step('Раунд «Хамса»: ставки команд с плюсом, ответы с телефонов')
+    await host.locator('.round-tab', { hasText: 'Хамса' }).click()
+    await host.getByText('Раунд «Хамса»').waitFor()
+    await screen.locator('.round-title', { hasText: 'Хамса' }).waitFor()
+    await vika.getByText('Вы не участвуете в этом раунде').waitFor()
+    await anna.getByText('Сделайте ставку').waitFor()
+    await anna.locator('.bet-input').fill('300')
+    await anna.getByRole('button', { name: 'Поставить' }).click()
+    await anna.getByText('Ставка принята').waitFor()
+    await gena.locator('.quick button', { hasText: 'Ва-банк' }).click()
+    await gena.getByText('Ставка принята').waitFor()
+    await host.getByRole('button', { name: /Показать вопрос/ }).click()
+    await borya.locator('textarea.answer').fill('Твёрдый знак')
+    await borya.getByRole('button', { name: 'Отправить ответ' }).click()
+    await gena.locator('textarea.answer').fill('Мягкий знак')
+    await gena.getByRole('button', { name: 'Отправить ответ' }).click()
+    await host.locator('.part', { hasText: '«Мягкий знак»' }).waitFor()
+    await host.getByRole('button', { name: 'Закончить приём ответов' }).click()
+    for (const [who, ok] of [
+      ['Альфа', true],
+      ['Гамма', false],
+    ]) {
+      const row = host.locator('.part.reveal', { hasText: who })
+      await row.getByRole('button', { name: 'Показать' }).click()
+      await row.locator(ok ? '.btn.ok' : '.btn.bad').click()
+    }
+    await teamScore(host, 'Альфа', '700').waitFor()
+    await host.getByRole('button', { name: /Показать правильный ответ/ }).click()
+    await s.shot(screen, 'screen-khamsa-reveal')
+    await host.getByRole('button', { name: /Итоги игры/ }).click()
+    await anna.getByText('Игра окончена!').waitFor()
+  } catch (err) {
+    await s.failShots()
+    throw err
+  } finally {
+    await server.stop()
+  }
+  return s.errors
+}
+
 // ───────────────────────────── Сервер комнат, игра через интернет ─────────────────────────────
 async function roomsScenario(browser, step) {
   const server = await startServer(['--rooms'])
@@ -630,6 +794,7 @@ for (const [title, scenario] of [
   ['«Своя игра»', jeopardyScenario],
   ['«Брейн-ринг» в командах', teamsScenario],
   ['Спортивная «Своя игра» командами', sportScenario],
+  ['«Хамса» командами', khamsaScenario],
   ['Комнаты и игра через интернет', roomsScenario],
 ]) {
   if (process.env.E2E_ONLY && !title.includes(process.env.E2E_ONLY)) continue

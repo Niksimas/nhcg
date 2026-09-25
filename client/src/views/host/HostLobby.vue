@@ -34,6 +34,11 @@ const MODES: { id: Mode; title: string; text: string }[] = [
     title: 'Брейн-ринг',
     text: 'Бои команд по 5 вопросов, минута на обсуждение, фальстарты. За победу в бою +1 в сквозную таблицу. Можно без пакета.',
   },
+  {
+    id: 'khamsa',
+    title: 'Хамса',
+    text: 'Команды по 5 игроков, 5 раундов: явный, полуявный, тайный, четвёртый с вычёркиванием тем и «Хамса» — вопрос на ставку.',
+  },
 ]
 
 const canStart = computed(() => s.value.mode === 'brainring' || !!s.value.pack)
@@ -151,7 +156,13 @@ function openScreen() {
           <template v-else>
             <div class="pack-title muted">Пакет не выбран</div>
             <div class="muted small">
-              {{ s.mode === 'brainring' ? 'Для брейн-ринга пакет не обязателен.' : 'Для «Своей игры» выберите пакет — например, встроенный демо-пакет.' }}
+              {{
+                s.mode === 'brainring'
+                  ? 'Для брейн-ринга пакет не обязателен.'
+                  : s.mode === 'khamsa'
+                    ? 'Для «Хамсы» выберите пакет — например, встроенный «Демо: Хамса».'
+                    : 'Для «Своей игры» выберите пакет — например, встроенный демо-пакет.'
+              }}
             </div>
           </template>
         </div>
@@ -229,7 +240,7 @@ function openScreen() {
 }
 .modes {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
 }
 .mode {

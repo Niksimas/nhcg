@@ -17,7 +17,7 @@ const CONTENT_STEPS = ['reading', 'buzzing', 'answering', 'reveal']
 export const KINDS = ['open', 'semi', 'closed', 'captain']
 export const KIND_LABEL = { open: 'открытый', semi: 'полуоткрытый', closed: 'закрытый', captain: 'командирский' }
 const PRICE_STEP = { x10: 10, x1: 1, x100: 100 }
-const STAGES = ['board', 'assign', 'theme', 'question', 'roundEnd', 'final', 'results']
+const STAGES = ['board', 'assign', 'strike', 'theme', 'question', 'roundEnd', 'final', 'results']
 
 export class JeopardyMode {
   constructor(game) {
@@ -98,7 +98,7 @@ export class JeopardyMode {
     if (!Number.isInteger(s.roundIndex) || !this.round(s.roundIndex)) s.roundIndex = 0
     s.played = Array.isArray(s.played) ? s.played.filter((id) => this.find(id)) : []
     if (!STAGES.includes(s.stage)) s.stage = 'board'
-    s.kinds = isPlainObject(s.kinds) ? Object.fromEntries(Object.entries(s.kinds).filter(([, k]) => KINDS.includes(k))) : {}
+    s.kinds = isPlainObject(s.kinds) ? Object.fromEntries(Object.entries(s.kinds).filter(([, k]) => this.kinds().includes(k))) : {}
     s.assign = isPlainObject(s.assign) ? s.assign : {}
     for (const [ri, teams] of Object.entries(s.assign)) {
       if (!isPlainObject(teams)) delete s.assign[ri]
@@ -169,6 +169,11 @@ export class JeopardyMode {
     return this.rounds()
       .map((_, i) => i)
       .filter((i) => this.playable(i))
+  }
+
+  // Виды раундов, которые может выбрать ведущий.
+  kinds() {
+    return KINDS
   }
 
   // Вид раунда: выбранный ведущим или по порядку — открытый, полуоткрытый, закрытый, командирский.
@@ -422,7 +427,7 @@ export class JeopardyMode {
 
   setKind(kind) {
     this.needSport()
-    if (!KINDS.includes(kind)) throw new GameError('Неизвестный вид раунда')
+    if (!this.kinds().includes(kind)) throw new GameError('Неизвестный вид раунда')
     const s = this.s
     const ri = s.roundIndex
     if (this.kindOf(ri) === kind) return true
@@ -652,17 +657,21 @@ export class JeopardyMode {
     this.game.emitEvent('wrong', { competitorId: cid, delta: -loss })
     if (q.type === 'normal') {
       this.game.lockOut(cid)
-      if (this.game.eligibleCompetitors().length > 0) {
-        // Остальные могут попробовать ответить.
-        q.responderId = null
-        q.step = 'buzzing'
-        const at = this.game.armBuzzer()
-        this.game.startTimer('buzz', this.settings.jBuzzTime, at)
-        this.game.emitEvent('armed', { at, again: true })
-        return true
-      }
+      if (this.continueAfterWrong(q)) return true
     }
     this.toReveal()
+    return true
+  }
+
+  // После неверного ответа остальные могут попробовать ответить: кнопки открываются снова.
+  // Возвращает false, если отвечать больше некому.
+  continueAfterWrong(q) {
+    if (this.game.eligibleCompetitors().length === 0) return false
+    q.responderId = null
+    q.step = 'buzzing'
+    const at = this.game.armBuzzer()
+    this.game.startTimer('buzz', this.settings.jBuzzTime, at)
+    this.game.emitEvent('armed', { at, again: true })
     return true
   }
 

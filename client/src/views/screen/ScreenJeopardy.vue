@@ -36,9 +36,10 @@ const podium = computed(() => standings.value.slice(0, 3))
 
 // Спортивный формат: кто за столом, объявленная тема, выбор игроков.
 const kindLabel = computed(() => {
-  const w = kindSuffix(round.value?.name, props.j.kind)
+  const w = kindSuffix(round.value?.name, props.j.kind, props.j.format)
   return w ? `${w} раунд` : ''
 })
+const finalTitle = computed(() => (props.j.format === 'khamsa' ? round.value?.name || 'Хамса' : 'Финал'))
 const tableList = computed(() =>
   props.j.table
     ? props.state.teams
@@ -49,6 +50,9 @@ const tableList = computed(() =>
 const theme = computed(() => (props.j.themeIndex != null ? props.j.board?.[props.j.themeIndex] ?? null : null))
 const phase = computed(() => props.j.phase)
 const teamsInPlay = computed(() => props.state.teams.filter((t) => props.state.players.some((p) => p.teamId === t.id)))
+// «Хамса», четвёртый раунд: чья очередь убирать тему и кто играет раунд от каждой команды.
+const strike = computed(() => (props.j.stage === 'strike' ? props.j.strike ?? null : null))
+const leaderOf = (teamId: string) => props.j.leaders?.[teamId]?.name ?? ''
 
 const SPECIAL: Record<string, { title: string; icon: string }> = {
   cat: { title: 'Кот в мешке', icon: '🐱' },
@@ -69,6 +73,13 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
           <div class="theme-big">{{ phase.themes[0]?.name ?? '…' }}</div>
           <div class="assign-sub">Капитаны выбирают, кто будет играть эту тему</div>
         </template>
+        <template v-else-if="phase.scope === 'leader'">
+          <div class="assign-sub">Капитаны выбирают одного игрока на весь раунд</div>
+          <div v-if="j.board" class="slots">
+            <div v-for="(t, ti) in j.board" :key="ti" class="slot">{{ t.name ?? `Тема ${ti + 1}` }}</div>
+          </div>
+          <div class="muted-label">Потом команды по очереди уберут темы — останется одна</div>
+        </template>
         <template v-else>
           <div class="assign-sub">Капитаны распределяют игроков по темам</div>
           <div class="slots">
@@ -88,6 +99,30 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
             :style="{ '--c': t.color, '--t': textOn(t.color) }"
           >
             {{ t.name }} {{ phase.ready.includes(t.id) ? '✓' : '…' }}
+          </span>
+        </div>
+      </div>
+    </template>
+
+    <!-- «Хамса», четвёртый раунд: команды по очереди убирают темы -->
+    <template v-else-if="strike && j.board">
+      <div class="round-title">{{ round?.name }} <span v-if="kindLabel" class="kind">· {{ kindLabel }}</span></div>
+      <div class="assign-card strike-card">
+        <div class="assign-sub">Команды по очереди убирают темы</div>
+        <div class="strike-list">
+          <div v-for="(t, ti) in j.board" :key="ti" class="strike-theme" :class="{ struck: t.struck }">{{ t.name ?? `Тема ${ti + 1}` }}</div>
+        </div>
+        <div class="muted-label">Убирает тему: {{ nameOf(strike.current) }}</div>
+        <div class="ready-row">
+          <span
+            v-for="id in strike.order"
+            :key="id"
+            class="ready-chip small"
+            :class="{ on: id === strike.current }"
+            :style="{ '--c': colorOf(id), '--t': textOn(colorOf(id)) }"
+            :title="leaderOf(id) ? `Раунд играет ${leaderOf(id)}` : ''"
+          >
+            {{ nameOf(id) }}<span v-if="leaderOf(id)" class="faint-team"> · {{ leaderOf(id) }}</span>
           </span>
         </div>
       </div>
@@ -186,7 +221,7 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 
     <!-- Финал -->
     <template v-else-if="j.stage === 'final' && final">
-      <div class="round-title">Финал</div>
+      <div class="round-title">{{ finalTitle }}</div>
       <div v-if="final.step === 'themes'" class="final-themes">
         <div v-for="t in final.themes" :key="t.index" class="final-theme" :class="{ removed: t.removed }">{{ t.name }}</div>
       </div>
@@ -358,6 +393,31 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
 }
 .price-chip.played {
   opacity: 0.3;
+}
+.strike-card {
+  gap: 1.6vh;
+  min-height: 0;
+}
+.strike-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1vh;
+}
+.strike-theme {
+  min-width: min(60vw, 900px);
+  padding: 0.15em 1.2em;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--board), var(--board-2));
+  border: 2px solid var(--board-edge);
+  font-size: clamp(1.1rem, min(2.8vw, 4.6vh), 3rem);
+  font-weight: 900;
+  text-transform: uppercase;
+  transition: opacity 0.4s;
+}
+.strike-theme.struck {
+  opacity: 0.2;
+  text-decoration: line-through;
 }
 .table-list {
   display: flex;

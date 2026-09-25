@@ -15,6 +15,10 @@ const comps = computed(() => competitorMap(s.value))
 const nameOf = (id: string) => comps.value.get(id)?.name ?? '—'
 const colorOf = (id: string) => comps.value.get(id)?.color ?? '#888'
 const scoreOf = (id: string) => comps.value.get(id)?.score ?? 0
+const title = computed(() => {
+  const j = s.value.jeopardy!
+  return j.format === 'khamsa' ? `Раунд «${j.rounds[j.roundIndex]?.name || 'Хамса'}»` : 'Финал'
+})
 
 const betInputs = reactive<Record<string, number | null>>({})
 const participantIds = computed(() => new Set(f.value.participants.map((p) => p.competitorId)))
@@ -42,7 +46,7 @@ async function closeAnswers() {
 <template>
   <div class="final">
     <div class="head">
-      <h2>Финал</h2>
+      <h2>{{ title }}</h2>
       <span v-if="f.themeName" class="theme">Тема: {{ f.themeName }}</span>
     </div>
 

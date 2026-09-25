@@ -133,6 +133,11 @@ function onDown(ev: PointerEvent) {
   --bg2: #2f375a;
   --fg: #e6e9ff;
 }
+.queue {
+  --bg1: #3cc8dc;
+  --bg2: #147a8c;
+  --fg: #03222a;
+}
 .locked {
   --bg1: #ef5b5b;
   --bg2: #a51d1d;

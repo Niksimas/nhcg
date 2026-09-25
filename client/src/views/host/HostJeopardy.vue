@@ -7,7 +7,7 @@ import Icon from '../../components/Icon.vue'
 import HostJQuestion from './HostJQuestion.vue'
 import HostJFinal from './HostJFinal.vue'
 import HostJSport from './HostJSport.vue'
-import { KIND_TITLE, kindSuffix } from '../../lib/rules'
+import { kindTitle, kindSuffix } from '../../lib/rules'
 import { useHost } from './ctx'
 
 defineProps<{ hostPlays: boolean }>()
@@ -17,7 +17,7 @@ const j = computed(() => s.value.jeopardy!)
 const comps = computed(() => competitorMap(s.value))
 const chooser = computed(() => (j.value.chooserId ? comps.value.get(j.value.chooserId) : undefined))
 const standings = computed(() => [...s.value.competitors].sort((a, b) => b.score - a.score))
-const sport = computed(() => j.value.format === 'sport')
+const sport = computed(() => j.value.format === 'sport' || j.value.format === 'khamsa')
 // Следующий раунд, который играется в этом формате (финал со ставками спортивный формат пропускает).
 const nextRound = computed(() => {
   const i = j.value.rounds.findIndex((r, idx) => idx > j.value.roundIndex && !r.skip)
@@ -45,11 +45,11 @@ async function select(id: string, played: boolean) {
           v-if="!r.skip"
           class="round-tab"
           :class="{ on: i === j.roundIndex && j.stage !== 'results', done: r.complete, final: r.type === 'final' }"
-          :title="r.kind ? `${KIND_TITLE[r.kind]} раунд` : ''"
+          :title="r.kind ? `${kindTitle(r.kind, j.format)} раунд` : ''"
           @click="goRound(i)"
         >
           {{ r.name }}
-          <span v-if="kindSuffix(r.name, r.kind)" class="kind-tag">{{ kindSuffix(r.name, r.kind) }}</span>
+          <span v-if="kindSuffix(r.name, r.kind, j.format)" class="kind-tag">{{ kindSuffix(r.name, r.kind, j.format) }}</span>
           <span v-if="r.complete" class="faint">✓</span>
         </button>
       </template>
@@ -58,7 +58,7 @@ async function select(id: string, played: boolean) {
       </button>
     </div>
 
-    <HostJSport v-if="sport && (j.stage === 'board' || j.stage === 'assign' || j.stage === 'theme')" />
+    <HostJSport v-if="sport && ['board', 'assign', 'strike', 'theme'].includes(j.stage)" />
 
     <template v-else-if="j.stage === 'board' && j.board">
       <div class="board-head">

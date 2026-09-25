@@ -4,10 +4,11 @@ import type { GameState } from '../../lib/types'
 import { plural, textOn } from '../../lib/util'
 import QrCode from '../../components/QrCode.vue'
 import { formatCode } from '../../lib/room'
+import { MODE_TITLE } from '../../lib/rules'
 
 const props = defineProps<{ state: GameState; flash: Record<string, number> }>()
 
-const title = computed(() => (props.state.mode === 'brainring' ? 'Брейн-ринг' : 'Своя игра'))
+const title = computed(() => MODE_TITLE[props.state.mode] ?? 'Своя игра')
 const url = computed(() => props.state.joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, ''))
 // Сервер комнат: игроки вводят код на главной странице сайта.
 const code = computed(() => (props.state.room?.mode === 'rooms' ? props.state.room.code : null))

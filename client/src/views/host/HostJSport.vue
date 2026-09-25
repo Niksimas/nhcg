@@ -2,8 +2,8 @@
 // Спортивная «Своя игра» у ведущего: вид раунда, распределение игроков по темам, темы и вопросы по порядку.
 import { computed } from 'vue'
 import type { RoundKind } from '../../lib/types'
-import { competitorMap, textOn } from '../../lib/util'
-import { KIND_HINT, KIND_TITLE } from '../../lib/rules'
+import { competitorMap, fmtScore, textOn } from '../../lib/util'
+import { KIND_HINT, kindsFor, kindTitle } from '../../lib/rules'
 import BoardGrid from '../../components/BoardGrid.vue'
 import TimerBar from '../../components/TimerBar.vue'
 import Icon from '../../components/Icon.vue'
@@ -15,7 +15,11 @@ const j = computed(() => s.value.jeopardy!)
 const comps = computed(() => competitorMap(s.value))
 const round = computed(() => j.value.rounds[j.value.roundIndex])
 const board = computed(() => j.value.board ?? [])
-const KINDS: RoundKind[] = ['open', 'semi', 'closed', 'captain']
+const KINDS = computed<RoundKind[]>(() => kindsFor(j.value.format))
+const khamsa = computed(() => j.value.format === 'khamsa')
+// «Хамса», четвёртый раунд: кто сейчас убирает тему и сколько тем осталось.
+const strike = computed(() => j.value.strike ?? null)
+const strikeLeft = computed(() => board.value.filter((t) => !t.struck).length)
 
 // Команды, у которых есть игроки, — они играют темы.
 const teams = computed(() => s.value.teams.filter((t) => s.value.players.some((p) => p.teamId === t.id)))
@@ -67,14 +71,46 @@ async function select(id: string, played: boolean) {
           :title="KIND_HINT[k]"
           @click="setKind(k)"
         >
-          {{ KIND_TITLE[k] }}
+          {{ kindTitle(k, j.format) }}
         </button>
       </div>
+      <span v-if="khamsa && j.roundNumber" class="muted small">Раунд {{ j.roundNumber }} из 5 · вопросы ×{{ j.roundNumber }}</span>
     </div>
     <p v-if="j.kind" class="muted small hint">{{ KIND_HINT[j.kind] }}</p>
 
     <!-- Капитаны выбирают игроков -->
-    <div v-if="j.stage === 'assign' && j.phase" class="card assign">
+    <div v-if="j.stage === 'assign' && j.phase && j.phase.scope === 'leader'" class="card assign">
+      <div class="assign-head">
+        <h3>Капитаны выбирают игрока четвёртого раунда</h3>
+        <TimerBar v-if="s.timers.assign" :timer="s.timers.assign" :now="now" />
+      </div>
+      <p class="muted small">
+        Обычно — самого сильного. Затем команды по очереди уберут темы, оставшуюся сыграют выбранные игроки.
+      </p>
+      <div class="assign-table" :style="{ '--n': 1 }">
+        <div class="cell head">Команда</div>
+        <div class="cell head">Играет раунд</div>
+        <template v-for="t in teams" :key="t.id">
+          <div class="cell team" :style="{ '--c': t.color, '--t': textOn(t.color) }">
+            <span class="team-name">{{ t.name }}</span>
+            <span v-if="j.phase.ready.includes(t.id)" class="ready">✓ готово</span>
+          </div>
+          <div class="cell">
+            <select class="select small" :value="j.leaders?.[t.id]?.playerId ?? ''" @change="assign(t.id, -1, $event)">
+              <option value="">— капитан —</option>
+              <option v-for="p in membersOf(t.id)" :key="p.id" :value="p.id">
+                {{ p.name }}{{ p.id === t.captainId ? ' (кап.)' : '' }}
+              </option>
+            </select>
+          </div>
+        </template>
+      </div>
+      <button class="btn primary big" @click="run('j.assign.done')">
+        <Icon name="play" /> Готово — к выбору темы <span class="kbd">Enter</span>
+      </button>
+    </div>
+
+    <div v-else-if="j.stage === 'assign' && j.phase" class="card assign">
       <div class="assign-head">
         <h3>
           {{ j.phase.scope === 'round' ? 'Капитаны распределяют игроков по темам' : `Тема «${themeName(j.phase.themes[0]?.index ?? 0)}»: капитаны выбирают игрока` }}
@@ -110,6 +146,39 @@ async function select(id: string, played: boolean) {
       </button>
     </div>
 
+    <!-- «Хамса», четвёртый раунд: команды по очереди убирают темы -->
+    <div v-else-if="j.stage === 'strike' && strike" class="card strike">
+      <h3>Команды по очереди убирают темы — останется одна</h3>
+      <div class="order">
+        <span
+          v-for="(id, i) in strike.order"
+          :key="id"
+          class="order-chip"
+          :class="{ on: id === strike.current }"
+          :style="{ '--c': comps.get(id)?.color ?? '#888', '--t': textOn(comps.get(id)?.color ?? '#888') }"
+        >
+          {{ i + 1 }}. {{ comps.get(id)?.name }} <span class="faint-in">{{ fmtScore(comps.get(id)?.score ?? 0) }}</span>
+        </span>
+      </div>
+      <p class="muted small">
+        Сейчас убирает: <b>{{ comps.get(strike.current ?? '')?.name }}</b> — капитан или игрок раунда нажимает на телефоне,
+        либо нажмите тему здесь за команду. Осталось тем: {{ strikeLeft }}.
+      </p>
+      <div class="strike-list">
+        <button
+          v-for="(th, ti) in board"
+          :key="ti"
+          class="strike-theme"
+          :class="{ struck: th.struck }"
+          :disabled="th.struck"
+          @click="run('j.strike', { index: ti })"
+        >
+          <span>{{ th.name }}</span>
+          <span v-if="!th.struck" class="strike-act"><Icon name="x" /> Убрать</span>
+        </button>
+      </div>
+    </div>
+
     <!-- Темы раунда -->
     <template v-else-if="j.stage === 'board'">
       <BoardGrid :board="board" variant="host" clickable @select="select" />
@@ -141,7 +210,7 @@ async function select(id: string, played: boolean) {
             class="select small"
             :value="j.table[t.id]?.playerId ?? ''"
             title="Кто играет эту тему"
-            @change="assign(t.id, j.themeIndex, $event)"
+            @change="assign(t.id, j.kind === 'leaders' ? -1 : j.themeIndex, $event)"
           >
             <option v-for="p in membersOf(t.id)" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
@@ -164,8 +233,14 @@ async function select(id: string, played: boolean) {
           <div class="cell team" :style="{ '--c': t.color, '--t': textOn(t.color) }">
             <span class="team-name">{{ comps.get(t.id)?.name ?? t.name }}</span>
           </div>
-          <div v-for="(_, ti) in board" :key="ti" class="cell">
-            {{ j.assign[t.id]?.[ti]?.name ?? (j.kind === 'captain' ? 'капитан' : '—') }}
+          <div v-for="(th, ti) in board" :key="ti" class="cell" :class="{ struck: th.struck }">
+            {{
+              j.kind === 'leaders'
+                ? th.struck
+                  ? '—'
+                  : j.leaders?.[t.id]?.name ?? 'капитан'
+                : j.assign[t.id]?.[ti]?.name ?? (j.kind === 'captain' ? 'капитан' : '—')
+            }}
           </div>
         </template>
       </div>
@@ -297,6 +372,70 @@ async function select(id: string, played: boolean) {
 }
 .tp .select {
   width: auto;
+}
+.strike {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.strike h3 {
+  margin: 0;
+}
+.order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.order-chip {
+  padding: 4px 10px;
+  border-radius: 99px;
+  border: 2px solid var(--c);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.order-chip.on {
+  background: var(--c);
+  color: var(--t);
+}
+.faint-in {
+  opacity: 0.7;
+  font-weight: 600;
+}
+.strike-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.strike-theme {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--board-edge);
+  background: linear-gradient(180deg, var(--board), var(--board-2));
+  color: var(--text);
+  font-weight: 800;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-align: left;
+}
+.strike-theme.struck {
+  opacity: 0.35;
+  text-decoration: line-through;
+  cursor: default;
+}
+.strike-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: #ff9a9a;
+  text-transform: none;
+}
+.cell.struck {
+  opacity: 0.4;
 }
 .lineup summary {
   cursor: pointer;

@@ -11,6 +11,7 @@ const props = defineProps<{
   timer: TimerState | undefined
   now: number
   showQuestion: boolean
+  title?: string
 }>()
 const emit = defineEmits<{ bet: [amount: number]; answer: [text: string] }>()
 
@@ -62,12 +63,15 @@ const dirty = computed(() => answer.value.trim() !== (answerSent.value ?? '').tr
 <template>
   <div class="final">
     <div class="head">
-      <div class="label">Финал</div>
+      <div class="label">{{ title ?? 'Финал' }}</div>
       <div v-if="final.themeName" class="theme">{{ final.themeName }}</div>
     </div>
 
     <template v-if="!me.participant">
-      <p class="muted t-center">Вы не участвуете в финале — для участия нужен положительный счёт. Следите за экраном!</p>
+      <p class="muted t-center">
+        Вы не участвуете {{ !title || title === 'Финал' ? 'в финале' : 'в этом раунде' }} — для участия нужен положительный счёт.
+        Следите за экраном!
+      </p>
     </template>
 
     <template v-else-if="final.step === 'themes'">

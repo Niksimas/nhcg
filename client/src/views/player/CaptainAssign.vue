@@ -16,6 +16,8 @@ const usedBy = computed(() => {
   return map
 })
 const allPicked = computed(() => props.captain.themes.every((t) => props.captain.picks[t.index]))
+// «Хамса», четвёртый раунд: один игрок на весь раунд (тема -1 — это не тема, а сам выбор).
+const leader = computed(() => props.captain.themes.length === 1 && props.captain.themes[0].index === -1)
 
 function label(t: { index: number; name: string | null }) {
   return t.name ?? `Тема ${t.index + 1} (название пока скрыто)`
@@ -50,7 +52,9 @@ function label(t: { index: number; name: string | null }) {
       </div>
     </div>
     <button v-if="!captain.ready" class="btn primary big block" :disabled="busy" @click="emit('ready')">Готово</button>
-    <p v-if="!captain.ready && !allPicked" class="muted small">На темы без выбора игрока программа назначит сама.</p>
+    <p v-if="!captain.ready && !allPicked" class="muted small">
+      {{ leader ? 'Если не выбрать, раунд сыграет капитан.' : 'На темы без выбора игрока программа назначит сама.' }}
+    </p>
     <div v-if="captain.ready" class="sent">✓ Выбор отправлен. Ждём других капитанов.</div>
   </div>
 </template>

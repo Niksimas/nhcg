@@ -66,17 +66,19 @@ export function buildViews(game) {
     pack,
   }
 
-  const isJ = s.mode === 'jeopardy'
+  // «Хамса» показывается так же, как «Своя игра» (темы, вопросы, раунд со ставками) — в поле jeopardy.
+  const isJ = s.mode === 'jeopardy' || s.mode === 'khamsa'
+  const jMode = game.modes[s.mode === 'khamsa' ? 'khamsa' : 'jeopardy']
   const pub = {
     ...base,
-    jeopardy: isJ ? game.modes.jeopardy.view('public') : null,
+    jeopardy: isJ ? jMode.view('public') : null,
     brainring: isJ ? null : game.modes.brainring.view('public'),
   }
 
   const last = game.undoStack[game.undoStack.length - 1]
   const host = {
     ...base,
-    jeopardy: isJ ? game.modes.jeopardy.view('host') : null,
+    jeopardy: isJ ? jMode.view('host') : null,
     brainring: isJ ? null : game.modes.brainring.view('host'),
     log: s.log,
     undo: last ? last.label : null,
@@ -103,7 +105,7 @@ export function buildViews(game) {
       delta: idx >= 0 ? buzzer.ranking[idx].delta : null,
       reaction: idx >= 0 ? buzzer.ranking[idx].reaction : null,
       isWinner: !!cid && b.winner?.competitorId === cid,
-      jeopardy: isJ ? game.modes.jeopardy.meView(cid, p.id) : null,
+      jeopardy: isJ ? jMode.meView(cid, p.id) : null,
       brainring: isJ ? null : game.modes.brainring.meView(cid),
     }
   }

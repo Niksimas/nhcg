@@ -39,6 +39,23 @@ export const SETTINGS_SPEC = {
   jFinalOnlyPositive: { type: 'bool', def: true },
   jNewRoundChooser: { type: 'enum', def: 'lowest', values: ['lowest', 'keep'] },
 
+  // «Хамса» (азербайджанская игра на основе «Эрудит-квартета»): 5 раундов, 5 тем по 5 вопросов.
+  // Стоимость вопроса = номер вопроса × база × номер раунда (100–500, 200–1000, 300–1500, 400–2000).
+  hPriceBase: { type: 'int', def: 100, min: 1, max: 1000 },
+  hBuzzTime: { type: 'int', def: 10, min: 0, max: 600 },
+  // На ответ после нажатия — 3 секунды (затягивать ответ нельзя).
+  hAnswerTime: { type: 'int', def: 3, min: 0, max: 600 },
+  // После неверного ответа право ответа переходит к следующему нажавшему (иначе кнопки открываются снова);
+  // на обдумывание — не больше 5 секунд.
+  hQueue: { type: 'bool', def: true },
+  hNextTime: { type: 'int', def: 5, min: 0, max: 600 },
+  hWrongPenalty: { type: 'bool', def: true },
+  // Капитанам: минута на расстановку (явный и тайный раунды, выбор игрока 4-го раунда), 20 секунд — в полуявном.
+  hAssignRoundTime: { type: 'int', def: 60, min: 0, max: 600 },
+  hAssignThemeTime: { type: 'int', def: 20, min: 0, max: 600 },
+  // Раунд «Хамса»: 60 секунд на обсуждение и 10 на запись ответа.
+  hFinalTime: { type: 'int', def: 70, min: 5, max: 600 },
+
   // «Брейн-ринг»
   brMainTime: { type: 'int', def: 60, min: 5, max: 600 },
   brAfterWrongTime: { type: 'int', def: 20, min: 0, max: 600 },

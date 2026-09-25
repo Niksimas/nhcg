@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { GameState } from '../../lib/types'
 import { textOn } from '../../lib/util'
 import { formatCode, room } from '../../lib/room'
+import { MODE_TITLE } from '../../lib/rules'
 
 const props = defineProps<{
   state: GameState | null
@@ -23,7 +24,7 @@ const newTeam = ref('')
 const teamMode = computed(() => !!props.state?.settings.teamMode)
 const allowNewTeam = computed(() => !!props.state?.settings.allowPlayerTeams)
 const teams = computed(() => props.state?.teams ?? [])
-const title = computed(() => (props.state?.mode === 'brainring' ? 'Брейн-ринг' : 'Своя игра'))
+const title = computed(() => (props.state ? MODE_TITLE[props.state.mode] : 'Своя игра'))
 
 watch(teams, (list) => {
   if (teamId.value && !list.some((t) => t.id === teamId.value)) teamId.value = null

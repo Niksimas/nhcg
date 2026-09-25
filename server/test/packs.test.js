@@ -109,6 +109,14 @@ test('встроенные демо-пакеты видны и загружаю�
   assert.equal(demo.rounds.at(-1).type, 'final')
   await assert.rejects(store.save('demo-svoya-igra', demo), /Встроенный/)
   await assert.rejects(store.remove('demo-svoya-igra'), /Встроенный/)
+  // «Хамса»: четыре раунда по пять тем из пяти вопросов и раунд «Хамса» с одним вопросом.
+  const khamsa = await store.loadForGame('demo-khamsa')
+  assert.equal(khamsa.rounds.length, 5)
+  for (const r of khamsa.rounds.slice(0, 4)) {
+    assert.equal(r.themes.length, 5, r.name)
+    for (const t of r.themes) assert.equal(t.questions.length, 5, `${r.name} → ${t.name}`)
+  }
+  assert.equal(khamsa.rounds[4].type, 'final')
 })
 
 test('создание, сохранение, копия и удаление пакета', async () => {

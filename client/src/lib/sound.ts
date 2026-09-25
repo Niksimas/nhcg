@@ -152,6 +152,7 @@ export function soundForEvent(name: string, data: { type?: string; resumed?: boo
     case 'brStart':
       return 'start'
     case 'armed':
+    case 'strike':
       return 'click'
     case 'correct':
       return 'correct'
@@ -177,6 +178,7 @@ export function soundForEvent(name: string, data: { type?: string; resumed?: boo
     case 'brQuestion':
     case 'assignStart':
     case 'battleStart':
+    case 'strikeStart':
       return 'select'
     case 'theme':
       return 'special'

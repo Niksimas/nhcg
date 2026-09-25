@@ -9,6 +9,7 @@ import { effectivePressTime, collectWindow, rankPresses, median, FAIRNESS, FAIRN
 import { GameError, newId, cleanName, isObj, finite } from './util.js'
 import { JeopardyMode } from './jeopardy.js'
 import { BrainRingMode } from './brainring.js'
+import { KhamsaMode } from './khamsa.js'
 import { buildViews } from './views.js'
 
 export { GameError, newId, cleanName }
@@ -17,6 +18,8 @@ export const PALETTE = [
   '#e53935', '#1e88e5', '#43a047', '#fdd835', '#8e24aa', '#fb8c00',
   '#00acc1', '#d81b60', '#7cb342', '#5c6bc0', '#8d6e63', '#26a69a',
 ]
+
+const MODE_TITLE = { jeopardy: '«Своя игра»', brainring: '«Брейн-ринг»', khamsa: '«Хамса»' }
 
 const MAX_PLAYERS = 100
 const MAX_TEAMS = 50
@@ -37,7 +40,7 @@ export class Game extends EventEmitter {
     this.saveDelay = opts.saveDelay ?? 400
     this.pack = null
     this.state = Game.initialState()
-    this.modes = { jeopardy: new JeopardyMode(this), brainring: new BrainRingMode(this) }
+    this.modes = { jeopardy: new JeopardyMode(this), brainring: new BrainRingMode(this), khamsa: new KhamsaMode(this) }
     this.undoStack = []
     this.presence = new Map() // playerId -> { conns, pings: number[], ping }
     this.earlyLocks = new Map() // competitorId -> момент (серверное время), до которого кнопка заблокирована
@@ -60,6 +63,7 @@ export class Game extends EventEmitter {
       timers: {},
       jeopardy: JeopardyMode.initialState(),
       brainring: BrainRingMode.initialState(),
+      khamsa: KhamsaMode.initialState(),
       log: [],
     }
   }
@@ -629,6 +633,7 @@ export class Game extends EventEmitter {
       timers: this.frozenTimers(),
       jeopardy: s.jeopardy,
       brainring: s.brainring,
+      khamsa: s.khamsa,
     })
     this.undoStack.push({ label, snap })
     if (this.undoStack.length > UNDO_LIMIT) this.undoStack.shift()
@@ -663,6 +668,7 @@ export class Game extends EventEmitter {
     }
     s.jeopardy = snap.jeopardy
     s.brainring = snap.brainring
+    s.khamsa = snap.khamsa
     this.log(`Отменено: ${item.label}`)
     this.emitEvent('undo', { label: item.label })
     this.changed()
@@ -678,6 +684,7 @@ export class Game extends EventEmitter {
     this.undoStack = []
     this.modes.jeopardy.reset()
     this.modes.brainring.reset()
+    this.modes.khamsa.reset()
     if (this.state.stage === 'game') this.mode.start()
     this.log(`Загружен пакет «${pack.title}»`)
     this.changed()
@@ -704,6 +711,7 @@ export class Game extends EventEmitter {
     this.undoStack = []
     this.modes.jeopardy.reset()
     this.modes.brainring.reset()
+    this.modes.khamsa.reset()
     if (this.state.stage === 'game') {
       this.state.stage = 'lobby'
       this.setBuzzer('test')
@@ -720,7 +728,7 @@ export class Game extends EventEmitter {
     this.pushUndo('Начало игры')
     this.state.stage = 'game'
     this.mode.start()
-    this.log(`Игра началась: ${this.state.mode === 'jeopardy' ? '«Своя игра»' : '«Брейн-ринг»'}`)
+    this.log(`Игра началась: ${MODE_TITLE[this.state.mode] ?? this.state.mode}`)
     this.emitEvent('gameStart')
   }
 
@@ -755,6 +763,7 @@ export class Game extends EventEmitter {
     s.buzzer = freshBuzzer('test')
     s.jeopardy = JeopardyMode.initialState()
     s.brainring = BrainRingMode.initialState()
+    s.khamsa = KhamsaMode.initialState()
     if (!keepPlayers) {
       for (const p of s.players) this.emit('kick', p.id)
       s.players = []
@@ -795,7 +804,9 @@ export class Game extends EventEmitter {
     if (fn) {
       result = fn(this, a)
     } else {
-      const modeName = name.startsWith('j.') ? 'jeopardy' : name.startsWith('br.') ? 'brainring' : null
+      // Команды «j.» — общие для «Своей игры» и «Хамсы»: их выполняет текущий из этих режимов.
+      const jMode = this.state.mode === 'khamsa' ? 'khamsa' : 'jeopardy'
+      const modeName = name.startsWith('j.') ? jMode : name.startsWith('br.') ? 'brainring' : null
       const handler = modeName && this.modes[modeName].commands[name]
       if (!handler) throw new GameError(`Неизвестная команда: ${name}`)
       if (this.state.mode !== modeName) throw new GameError('Эта команда относится к другому режиму')
@@ -903,6 +914,7 @@ export class Game extends EventEmitter {
       }
       if (isObj(saved.jeopardy)) s.jeopardy = { ...s.jeopardy, ...saved.jeopardy }
       if (isObj(saved.brainring)) s.brainring = { ...s.brainring, ...saved.brainring }
+      if (isObj(saved.khamsa)) s.khamsa = { ...s.khamsa, ...saved.khamsa }
       this.state = s
       for (const t of s.teams) this.fixCaptain(t.id)
       if (typeof saved.packId === 'string' && this.packStore) {
@@ -914,11 +926,13 @@ export class Game extends EventEmitter {
           s.packId = null
           s.jeopardy = JeopardyMode.initialState()
           s.brainring = BrainRingMode.initialState()
-          if (s.stage === 'game' && s.mode === 'jeopardy') s.stage = 'lobby'
+          s.khamsa = KhamsaMode.initialState()
+          if (s.stage === 'game' && s.mode !== 'brainring') s.stage = 'lobby'
         }
       }
       this.modes.jeopardy.sanitize()
       this.modes.brainring.sanitize()
+      this.modes.khamsa.sanitize()
       this.log('Игра восстановлена после перезапуска сервера')
       this.changed()
       return true

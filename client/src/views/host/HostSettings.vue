@@ -173,6 +173,52 @@ async function newGame(keepPlayers: boolean) {
     </section>
 
     <section>
+      <h4>Хамса</h4>
+      <div class="grid">
+        <label class="field">
+          <span>Стоимость вопроса в первом раунде (во втором — вдвое больше и т.д.)</span>
+          <input class="input" type="number" min="1" max="1000" :value="st.hPriceBase" @change="num('hPriceBase', $event)" />
+        </label>
+        <label class="field">
+          <span>Время на нажатие кнопки, с (0 — без ограничения)</span>
+          <input class="input" type="number" min="0" max="600" :value="st.hBuzzTime" @change="num('hBuzzTime', $event)" />
+        </label>
+        <label class="field">
+          <span>Время на ответ после нажатия, с</span>
+          <input class="input" type="number" min="0" max="600" :value="st.hAnswerTime" @change="num('hAnswerTime', $event)" />
+        </label>
+        <label class="field">
+          <span>Время следующему игроку после неверного ответа, с</span>
+          <input class="input" type="number" min="0" max="600" :value="st.hNextTime" @change="num('hNextTime', $event)" />
+        </label>
+        <label class="field">
+          <span>Время капитанам на расстановку (явный и тайный раунды, выбор игрока четвёртого раунда), с</span>
+          <input class="input" type="number" min="0" max="600" :value="st.hAssignRoundTime" @change="num('hAssignRoundTime', $event)" />
+        </label>
+        <label class="field">
+          <span>Время капитану на выбор игрока (полуявный раунд), с</span>
+          <input class="input" type="number" min="0" max="600" :value="st.hAssignThemeTime" @change="num('hAssignThemeTime', $event)" />
+        </label>
+        <label class="field">
+          <span>Время на обсуждение и ответ в раунде «Хамса», с</span>
+          <input class="input" type="number" min="5" max="600" :value="st.hFinalTime" @change="num('hFinalTime', $event)" />
+        </label>
+      </div>
+      <label class="check">
+        <input type="checkbox" :checked="st.hQueue" @change="bool('hQueue', $event)" />
+        После неверного ответа отвечает следующий, кто нажал (иначе кнопки открываются снова)
+      </label>
+      <label class="check">
+        <input type="checkbox" :checked="st.hWrongPenalty" @change="bool('hWrongPenalty', $event)" />
+        Неверный ответ отнимает стоимость вопроса
+      </label>
+      <p class="muted note">
+        Нажатие до конца чтения вопроса — фальстарт: игрок теряет право ответа на этот вопрос. Вид раунда выбирается над
+        темами раунда; по умолчанию — явный, полуявный, тайный, четвёртый и «Хамса» со ставками.
+      </p>
+    </section>
+
+    <section>
       <h4>Брейн-ринг</h4>
       <div class="grid">
         <label class="field">

@@ -45,7 +45,7 @@ function assign() {
   void run('j.assign', { competitorId: pickId.value, price: price.value })
 }
 
-const sport = computed(() => j.value.format === 'sport')
+const sport = computed(() => j.value.format === 'sport' || j.value.format === 'khamsa')
 // Спортивный формат: сколько вопросов осталось в теме и кто за столом.
 const themeLeft = computed(() => {
   const ti = j.value.themeIndex

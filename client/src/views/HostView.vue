@@ -145,10 +145,10 @@ function hotkeyAction(e: KeyboardEvent): { name: string; args?: Record<string, u
   const s = state.value!
   const key = e.code === 'Space' ? 'space' : e.key === 'Enter' ? 'enter' : e.key === 'Backspace' || e.key === 'Delete' ? 'wrong' : e.key === 'Escape' ? 'esc' : e.key === 'ArrowRight' ? 'right' : null
   if (!key) return null
-  if (s.mode === 'jeopardy' && s.jeopardy) {
+  if ((s.mode === 'jeopardy' || s.mode === 'khamsa') && s.jeopardy) {
     const j = s.jeopardy
     const q = j.question
-    const sport = j.format === 'sport'
+    const sport = j.format === 'sport' || j.format === 'khamsa'
     if (j.stage === 'question' && q) {
       if (key === 'space' && q.step === 'reading') return { name: 'j.arm' }
       if (key === 'enter' && q.step === 'answering') return { name: 'j.judge', args: { correct: true } }
@@ -251,6 +251,7 @@ function fmtTime(ts: number) {
           <div class="modes">
             <button class="mode-btn" :class="{ on: mode === 'jeopardy' }" @click="switchMode('jeopardy')">Своя игра</button>
             <button class="mode-btn" :class="{ on: mode === 'brainring' }" @click="switchMode('brainring')">Брейн-ринг</button>
+            <button class="mode-btn" :class="{ on: mode === 'khamsa' }" @click="switchMode('khamsa')">Хамса</button>
           </div>
         </div>
         <button class="pack-btn" title="Пакеты вопросов" @click="modal = 'packs'">
@@ -292,7 +293,7 @@ function fmtTime(ts: number) {
 
         <main class="main scroll">
           <HostLobby v-if="state.stage === 'lobby'" />
-          <HostJeopardy v-else-if="mode === 'jeopardy' && state.jeopardy" :host-plays="hostPlays" />
+          <HostJeopardy v-else-if="(mode === 'jeopardy' || mode === 'khamsa') && state.jeopardy" :host-plays="hostPlays" />
           <HostBrainRing v-else-if="mode === 'brainring' && state.brainring" :host-plays="hostPlays" />
           <div v-else class="card muted">
             Для «Своей игры» нужен пакет вопросов.
@@ -304,7 +305,7 @@ function fmtTime(ts: number) {
           <HostBuzzPanel />
           <div class="keys card">
             <div class="label">Клавиши</div>
-            <template v-if="mode === 'jeopardy'">
+            <template v-if="mode !== 'brainring'">
               <div><span class="kbd">Пробел</span> принимать ответы</div>
               <div><span class="kbd">Enter</span> верно / далее</div>
               <div><span class="kbd">Backspace</span> неверно</div>

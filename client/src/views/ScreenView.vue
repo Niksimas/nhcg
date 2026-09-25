@@ -85,6 +85,8 @@ const CLEARS_OVERLAY = new Set([
   'assignStart',
   'battleStart',
   'battleEnd',
+  'strikeStart',
+  'strike',
 ])
 
 function showOverlay(o: { text: string; sub?: string; color: string; kind: string }, ms: number) {
@@ -170,7 +172,7 @@ const mode = computed(() => state.value?.mode)
     <template v-else>
       <ScreenLobby v-if="state.stage === 'lobby'" :state="state" :flash="flash" />
       <ScreenJeopardy
-        v-else-if="mode === 'jeopardy' && state.jeopardy"
+        v-else-if="(mode === 'jeopardy' || mode === 'khamsa') && state.jeopardy"
         :state="state"
         :j="state.jeopardy"
         :now="now"
