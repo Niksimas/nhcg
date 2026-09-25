@@ -71,6 +71,14 @@ function openScreen() {
           </p>
           <div class="row wrap">
             <button class="btn" @click="openScreen"><Icon name="monitor" /> Экран для зрителей</button>
+            <button
+              v-if="s.screens"
+              class="btn ghost"
+              title="Сыграть мелодию на экране для зрителей. Если не слышно — щёлкните по окну экрана один раз"
+              @click="run('sound.test')"
+            >
+              <Icon name="volume" /> Проверить звук на экране
+            </button>
             <button class="btn ghost" @click="openJoin"><Icon name="qr" /> Показать QR крупно / не подключаются?</button>
           </div>
         </div>

@@ -116,6 +116,9 @@ useConnMessage(conn, 'event', (msg) => {
     const c = comps.value.get(data.competitorId)
     if (c) showOverlay({ text: 'Фальстарт!', sub: c.name, color: '#dc2626', kind: 'false' }, 1600)
   }
+  if (name === 'soundTest' && !sound.unlocked.value) {
+    showOverlay({ text: 'Щёлкните здесь', sub: 'чтобы браузер разрешил звук', color: '#1c3aa9', kind: 'hint' }, 3000)
+  }
   if (name === 'media') {
     if (data.action === 'replay') {
       mediaPaused.value = false

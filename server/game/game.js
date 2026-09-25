@@ -954,4 +954,5 @@ const HOST_COMMANDS = {
     const action = ['play', 'pause', 'replay'].includes(a.action) ? a.action : 'replay'
     g.emitEvent('media', { action })
   },
+  'sound.test': (g) => g.emitEvent('soundTest'),
 }

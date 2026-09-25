@@ -170,6 +170,7 @@ export function soundForEvent(name: string, data: { type?: string; resumed?: boo
       return 'join'
     case 'brWinner':
     case 'results':
+    case 'soundTest':
       return 'win'
     case 'finalQuestion':
     case 'brQuestion':

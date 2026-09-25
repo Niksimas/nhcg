@@ -451,3 +451,9 @@ test('после перезапуска открытый вопрос возвр
   g2.hostCommand('j.judge', { correct: true })
   assert.equal(g2.score(players[1].id), 500)
 })
+
+test('проверка звука отправляет событие экранам', () => {
+  const { game, events } = makeGame()
+  game.hostCommand('sound.test')
+  assert.ok(events.some((e) => e.name === 'soundTest'))
+})
