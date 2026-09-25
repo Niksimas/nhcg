@@ -102,6 +102,37 @@ class Session {
     return page.screenshot({ path: path.join(OUT, this.name, `${name}.png`), animations: 'disabled' })
   }
 
+  // Кнопки и поля в одной строке должны быть одной высоты.
+  async sameHeights(page, label) {
+    const rows = await page.evaluate(() => {
+      const out = []
+      const isCtl = (el) => el.matches('button, select, a.btn, .btn, input:not([type=checkbox]):not([type=radio]):not([type=range])')
+      const visible = (el) => {
+        const r = el.getBoundingClientRect()
+        return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden'
+      }
+      for (const parent of document.querySelectorAll('body *')) {
+        const cs = getComputedStyle(parent)
+        if (!(cs.display.includes('flex') && cs.flexDirection.startsWith('row')) && !cs.display.includes('grid')) continue
+        const kids = [...parent.children].filter((c) => isCtl(c) && visible(c))
+        const rows = []
+        for (const k of kids) {
+          const r = k.getBoundingClientRect()
+          const mid = r.top + r.height / 2
+          let row = rows.find((x) => Math.abs(x.mid - mid) < 6)
+          if (!row) rows.push((row = { mid, items: [] }))
+          row.items.push({ h: Math.round(r.height), label: (k.innerText || k.title || k.tagName).trim().replace(/\s+/g, ' ').slice(0, 20) })
+        }
+        for (const row of rows) {
+          const hs = row.items.map((i) => i.h)
+          if (row.items.length > 1 && Math.max(...hs) - Math.min(...hs) > 2) out.push(row.items.map((i) => `«${i.label}» ${i.h}`).join(' | '))
+        }
+      }
+      return [...new Set(out)]
+    })
+    for (const r of rows) this.errors.push(`[${label}] кнопки разной высоты: ${r}`)
+  }
+
   // На телефоне страница не должна прокручиваться вбок — ни целиком, ни внутри вкладок.
   async noHScroll(page, label) {
     const over = await page.evaluate(() => [
@@ -183,6 +214,7 @@ async function jeopardyScenario(browser, step) {
     await screen.locator('.board .theme', { hasText: 'География' }).waitFor()
     await anna.locator('.board .theme', { hasText: 'Кино' }).waitFor()
     await s.shot(screen, 'screen-board')
+    await s.sameHeights(host, 'ведущий: табло')
     await s.shot(host, 'host-board')
 
     step('Выбор с телефона, раннее нажатие, честная кнопка')
@@ -199,6 +231,9 @@ async function jeopardyScenario(browser, step) {
     await host.locator('.responder', { hasText: 'Вика' }).waitFor()
     await vika.getByText('Ваш ответ!').waitFor()
     await s.shot(vika, 'phone-winner')
+    await host.locator('.bar .pill', { hasText: 'Идёт ответ' }).waitFor()
+    await s.sameHeights(host, 'ведущий: ответ')
+    await s.sameHeights(vika, 'телефон: ответ')
     await s.shot(host, 'host-answering')
     await s.shot(screen, 'screen-question')
     await host.keyboard.press('Backspace')
@@ -395,7 +430,19 @@ async function teamsScenario(browser, step) {
     await screen.locator('table.standings').waitFor()
     await sleep(600)
     await s.shot(screen, 'screen-standings')
+    await s.sameHeights(host, 'ведущий: брейн-ринг')
     await s.shot(host, 'host-standings')
+
+    step('Журнал: события, история боёв и вопросов')
+    await host.getByRole('button', { name: 'Журнал' }).click()
+    await host.locator('.modal .item', { hasText: 'Итоги турнира' }).first().waitFor()
+    await host.locator('.modal .seg-btn', { hasText: 'Бои' }).click()
+    await host.locator('.modal .item', { hasText: 'победа: Синие' }).waitFor()
+    await host.locator('.modal .item', { hasText: 'победа: Красные' }).waitFor()
+    await s.shot(host, 'host-journal-battles')
+    await host.locator('.modal .seg-btn', { hasText: 'Вопросы' }).click()
+    await host.locator('.modal .item', { hasText: 'не взят' }).first().waitFor()
+    await host.keyboard.press('Escape')
   } catch (err) {
     await s.failShots()
     throw err
@@ -757,6 +804,7 @@ async function roomsScenario(browser, step) {
 
     step('Закрытие комнаты')
     await host.locator('button[title="Настройки"]').click()
+    await host.locator('.modal .tab', { hasText: 'Общие' }).click()
     host.once('dialog', (d) => d.accept())
     await host.getByRole('button', { name: /Закрыть комнату/ }).click()
     await host.waitForURL(`${BASE}/`)
@@ -802,9 +850,15 @@ async function mobileHostScenario(browser, step) {
     await s.shot(host, 'host-players')
     await host.locator('.m-tab', { hasText: 'Игра' }).click()
 
-    step('Настройки выезжают снизу')
+    step('Настройки выезжают снизу и разделены на вкладки')
     await host.locator('button[title="Настройки"]').click()
-    await host.locator('.modal').getByText('Общие').waitFor()
+    await host.locator('.modal .tab.on', { hasText: 'Своя игра' }).waitFor()
+    await host.locator('.modal .tab', { hasText: 'Брейн-ринг' }).click()
+    await host.locator('.modal').getByText('Время на вопрос, с').waitFor()
+    await host.locator('.modal .tab', { hasText: 'Общие' }).click()
+    await host.locator('.modal').getByText('Закрыть вход для новых игроков').waitFor()
+    await s.noHScroll(host, 'настройки')
+    await s.sameHeights(host, 'настройки на телефоне')
     await s.shot(host, 'host-settings')
     await host.locator('.modal button[title="Закрыть (Esc)"]').click()
 
@@ -830,6 +884,7 @@ async function mobileHostScenario(browser, step) {
     ])
     if (Math.abs(okBox.y - badBox.y) > 2) s.errors.push('[host] «Верно» и «Неверно» не в одну строку')
     await s.noHScroll(host, 'ответ')
+    await s.sameHeights(host, 'пульт: ответ')
     await s.shot(host, 'host-answering')
     await host.getByRole('button', { name: /Верно/ }).click()
     await host.getByText('Вопрос сыгран').waitFor()
@@ -845,6 +900,9 @@ async function mobileHostScenario(browser, step) {
     await vika.locator('.board .cell', { hasText: '200' }).first().click()
     await host.locator('.m-tab .alert-dot').waitFor()
     await s.shot(host, 'host-players-alert')
+    await host.locator('.m-tab', { hasText: 'Журнал' }).click()
+    await host.locator('.hist-pane .item', { hasText: 'Вика: верно, +100' }).waitFor()
+    await s.shot(host, 'host-journal')
     await host.locator('.m-tab', { hasText: 'Игра' }).click()
     await host.locator('.m-tab .alert-dot').waitFor({ state: 'detached' })
     await host.getByRole('button', { name: 'Никто не знает — закрыть вопрос' }).click()

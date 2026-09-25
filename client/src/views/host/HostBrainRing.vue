@@ -5,6 +5,7 @@ import { competitorMap, textOn, timerLeft } from '../../lib/util'
 import BrStandings from '../../components/BrStandings.vue'
 import TimerBar from '../../components/TimerBar.vue'
 import Icon from '../../components/Icon.vue'
+import HostBuzzPanel from './HostBuzzPanel.vue'
 import { useHost } from './ctx'
 
 const { state, run, now } = useHost()
@@ -17,8 +18,6 @@ const responder = computed(() => (br.value.stage === 'answering' && b.value.winn
 const mainLeft = computed(() => timerLeft(s.value.timers.main, now.value))
 
 const falseStarters = computed(() => b.value.falseStarts.map((id) => nameOf(id)))
-const history = computed(() => [...br.value.history].reverse().slice(0, 12))
-const RESULT: Record<string, string> = { correct: 'взят', burned: 'не взят', cancelled: 'снят' }
 
 async function next() {
   await run('br.next')
@@ -168,7 +167,7 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
         <div class="waiting"><span class="pulse-dot" /> Идёт время — ждём нажатия</div>
         <div class="row wrap">
           <button class="btn" @click="run('br.burn')">Никто не ответил</button>
-          <button class="btn small ghost" @click="run('br.cancel')">Снять вопрос</button>
+          <button class="btn ghost" @click="run('br.cancel')">Снять вопрос</button>
         </div>
       </template>
 
@@ -208,6 +207,9 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
       <div v-if="falseStarters.length" class="fs">Фальстарт: {{ falseStarters.join(', ') }}</div>
     </div>
 
+    <!-- Кто нажал и с каким отставанием -->
+    <HostBuzzPanel variant="ranking" />
+
     <div class="card table-card">
       <div class="label">
         Турнирная таблица
@@ -221,24 +223,6 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
         :highlight="battle?.teams ?? []"
         :winner-id="br.stage === 'finished' ? br.winnerId : null"
       />
-    </div>
-
-    <div v-if="br.battles.length" class="history">
-      <div class="label">Бои</div>
-      <div v-for="bt in [...br.battles].reverse().slice(0, 12)" :key="bt.no" class="h-row">
-        <span class="faint nums">№{{ bt.no }}</span>
-        <span>{{ bt.teams.map((id) => `${nameOf(id)} ${bt.scores[id] ?? 0}`).join(' — ') }}</span>
-        <span class="faint">· {{ bt.winnerId ? `победа ${nameOf(bt.winnerId)}` : 'ничья' }}</span>
-      </div>
-    </div>
-
-    <div v-if="history.length" class="history">
-      <div class="label">Вопросы</div>
-      <div v-for="(h, i) in history" :key="i" class="h-row">
-        <span class="faint nums">№{{ h.index + 1 }}</span>
-        <span>{{ RESULT[h.result] }}</span>
-        <span v-if="h.competitorId">· {{ nameOf(h.competitorId) }} +{{ h.value }}</span>
-      </div>
     </div>
 
   </div>
@@ -329,6 +313,11 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
   cursor: pointer;
   color: var(--text);
 }
+/* Плашки в строке боя — той же высоты, что и кнопка «Завершить бой». */
+.top-row .chip {
+  height: var(--h-sm);
+  padding: 0 0.8em;
+}
 .chip.warn {
   background: var(--warn-soft);
   color: #92400e;
@@ -399,16 +388,6 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
 .fs {
   color: var(--bad);
   font-weight: 700;
-}
-.history {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 0.9rem;
-}
-.h-row {
-  display: flex;
-  gap: 8px;
 }
 .small {
   font-size: 0.85rem;

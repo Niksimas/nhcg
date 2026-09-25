@@ -173,6 +173,7 @@ const dirty = computed(() => answer.value.trim() !== (answerSent.value ?? '').tr
   gap: 8px;
 }
 .bet-input {
+  height: var(--h-lg);
   font-size: 1.4rem;
   text-align: center;
 }

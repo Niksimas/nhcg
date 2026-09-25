@@ -239,11 +239,12 @@ onMounted(async () => {
 .code-input {
   flex: 1;
   min-width: 0;
-  font-size: 1.9rem;
+  height: var(--h-lg);
+  font-size: 1.7rem;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-align: center;
-  padding: 10px 12px;
+  padding: 0 12px;
 }
 .host-btn {
   align-self: flex-start;

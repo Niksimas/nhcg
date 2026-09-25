@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// Панель ведущего. На телефоне — пульт: игра и список игроков на разных вкладках.
+// Панель ведущего. Состояние кнопок — в шапке, журнал игры — в отдельном окне.
+// На телефоне — пульт: игра, список игроков и журнал на разных вкладках.
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { GameConnection } from '../lib/connection'
 import { getHostKey, setHostKey } from '../lib/api'
@@ -17,6 +18,7 @@ import HostBrainRing from './host/HostBrainRing.vue'
 import HostBuzzPanel from './host/HostBuzzPanel.vue'
 import HostSettings from './host/HostSettings.vue'
 import HostJoin from './host/HostJoin.vue'
+import HostHistory from './host/HostHistory.vue'
 import { provideHost } from './host/ctx'
 
 const initialKey = getHostKey()
@@ -28,18 +30,19 @@ const status = conn.status
 
 type SoundMode = 'auto' | 'on' | 'off'
 const soundMode = ref<SoundMode>((storage.get('quiz.hostSoundMode') as SoundMode) || 'auto')
-const modal = ref<'settings' | 'join' | null>(null)
+const modal = ref<'settings' | 'join' | 'history' | null>(null)
 const keyInput = ref('')
 const toasts = ref<{ id: number; text: string; kind: 'ok' | 'err' }[]>([])
 const flash = reactive<Record<string, number>>({})
 let toastSeq = 0
 
-// Телефон: одна колонка, внизу вкладки «Игра» и «Игроки».
+// Телефон: одна колонка, внизу вкладки «Игра», «Игроки» и «Журнал».
+type Tab = 'game' | 'players' | 'history'
 const mobile = useMedia('(max-width: 760px)')
-const tab = ref<'game' | 'players'>('game')
-// Пока ведущий на вкладке «Игроки», в игре что-то произошло (нажатие, игрок выбрал вопрос) — отмечаем вкладку «Игра».
+const tab = ref<Tab>('game')
+// Пока ведущий на другой вкладке, в игре что-то произошло (нажатие, игрок выбрал вопрос) — отмечаем вкладку «Игра».
 const gameAlert = ref(false)
-function showTab(t: 'game' | 'players') {
+function showTab(t: Tab) {
   tab.value = t
   if (t === 'game') gameAlert.value = false
 }
@@ -49,7 +52,7 @@ watch(
     return s ? [s.stage, s.buzzer.status, s.jeopardy?.stage, s.jeopardy?.question?.id, s.brainring?.stage].join('|') : ''
   },
   () => {
-    if (mobile.value && tab.value === 'players') gameAlert.value = true
+    if (mobile.value && tab.value !== 'game') gameAlert.value = true
   },
 )
 
@@ -229,11 +232,6 @@ const playersCount = computed(() => (state.value?.settings.teamMode ? state.valu
 function openScreen() {
   window.open(roomPath('/screen'), 'quiz-screen', 'width=1280,height=720')
 }
-
-const lastLog = computed(() => [...(state.value?.log ?? [])].reverse().slice(0, 30))
-function fmtTime(ts: number) {
-  return new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-}
 </script>
 
 <template>
@@ -287,25 +285,30 @@ function fmtTime(ts: number) {
             <option value="khamsa">Хамса</option>
           </select>
         </div>
-        <div class="grow" />
+        <!-- Состояние кнопок игроков и таймер: на компьютере — прямо в шапке, на телефоне — полоской под ней. -->
+        <div v-if="!mobile" class="status-slot"><HostBuzzPanel variant="pill" /></div>
+        <div v-else class="grow" />
         <button
-          class="btn small"
-          :class="{ icon: mobile }"
+          class="btn"
+          :class="mobile ? 'icon' : 'has-lbl'"
           :disabled="!state.undo"
           :title="state.undo ? `Отменить: ${state.undo} (Ctrl+Z)` : 'Нечего отменять'"
           @click="run('undo')"
         >
-          <Icon name="undo" /> <template v-if="!mobile">Отменить</template>
+          <Icon name="undo" /> <span v-if="!mobile" class="lbl">Отменить</span>
         </button>
-        <button class="btn small icon sound-btn" :title="soundTitle" @click="cycleSound">
+        <button class="btn icon sound-btn" :title="soundTitle" @click="cycleSound">
           <Icon :name="soundMode === 'off' ? 'mute' : 'volume'" />
           <span v-if="soundMode === 'auto'" class="auto-tag">A</span>
         </button>
-        <button v-if="!mobile" class="btn small" title="Открыть экран для зрителей в новом окне" @click="openScreen">
-          <Icon name="monitor" /> Экран
+        <button v-if="!mobile" class="btn has-lbl" title="Открыть экран для зрителей в новом окне" @click="openScreen">
+          <Icon name="monitor" /> <span class="lbl">Экран</span>
           <span v-if="state.screens" class="chip mini">{{ state.screens }}</span>
         </button>
-        <button class="btn small icon" title="Настройки" @click="modal = 'settings'"><Icon name="settings" /></button>
+        <button v-if="!mobile" class="btn has-lbl" title="Журнал игры: события, бои и вопросы" @click="modal = 'history'">
+          <Icon name="list" /> <span class="lbl">Журнал</span>
+        </button>
+        <button class="btn icon" title="Настройки" @click="modal = 'settings'"><Icon name="settings" /></button>
         <!-- На телефоне в режиме комнат вместо QR-кода — код комнаты: он нужнее, окно подключения то же. -->
         <button v-if="mobile && roomCode" class="room-chip" title="Код комнаты — как подключиться" @click="modal = 'join'">
           <b class="nums">{{ formatCode(roomCode) }}</b>
@@ -323,40 +326,17 @@ function fmtTime(ts: number) {
       <div class="layout" :class="{ m: mobile }">
         <aside v-show="!mobile || tab === 'players'" class="side scroll">
           <HostRoster />
-          <div v-if="lastLog.length" class="log">
-            <div class="label">Журнал</div>
-            <div v-for="(l, i) in lastLog" :key="i" class="log-row">
-              <span class="faint nums">{{ fmtTime(l.at) }}</span> {{ l.text }}
-            </div>
-          </div>
         </aside>
 
         <main v-show="!mobile || tab === 'game'" class="main scroll">
           <HostLobby v-if="state.stage === 'lobby'" />
           <HostJeopardy v-else-if="(mode === 'jeopardy' || mode === 'khamsa') && state.jeopardy" />
           <HostBrainRing v-else-if="mode === 'brainring' && state.brainring" />
-          <HostBuzzPanel v-if="mobile" variant="ranking" class="m-ranking" />
         </main>
 
-        <aside v-if="!mobile" class="right scroll">
-          <HostBuzzPanel />
-          <div class="keys card">
-            <div class="label">Клавиши</div>
-            <template v-if="mode !== 'brainring'">
-              <div><span class="kbd">Пробел</span> принимать ответы</div>
-              <div><span class="kbd">Enter</span> верно / далее</div>
-              <div><span class="kbd">Backspace</span> неверно</div>
-              <div><span class="kbd">Esc</span> никто не знает — закрыть вопрос</div>
-            </template>
-            <template v-else>
-              <div><span class="kbd">Пробел</span> «Время!»</div>
-              <div><span class="kbd">Enter</span> верно / следующий вопрос</div>
-              <div><span class="kbd">Backspace</span> неверно</div>
-            </template>
-            <div><span class="kbd">P</span> пауза таймера</div>
-            <div><span class="kbd">Ctrl+Z</span> отменить</div>
-          </div>
-        </aside>
+        <section v-if="mobile" v-show="tab === 'history'" class="hist-pane scroll">
+          <HostHistory />
+        </section>
       </div>
 
       <nav v-if="mobile" class="m-tabs">
@@ -369,6 +349,10 @@ function fmtTime(ts: number) {
           <Icon name="users" size="1.4em" />
           <span>{{ state.settings.teamMode ? 'Команды' : 'Игроки' }} · {{ playersCount }}</span>
         </button>
+        <button class="m-tab" :class="{ on: tab === 'history' }" @click="showTab('history')">
+          <Icon name="list" size="1.4em" />
+          <span>Журнал</span>
+        </button>
       </nav>
     </template>
 
@@ -377,6 +361,9 @@ function fmtTime(ts: number) {
     </Modal>
     <Modal v-if="modal === 'join' && state" title="Подключение игроков" width="620px" @close="modal = null">
       <HostJoin />
+    </Modal>
+    <Modal v-if="modal === 'history' && state" title="Журнал игры" width="640px" @close="modal = null">
+      <HostHistory />
     </Modal>
 
     <div class="toasts">
@@ -433,11 +420,22 @@ function fmtTime(ts: number) {
   align-items: center;
   gap: 10px;
 }
+/* Все элементы шапки — одной высоты (--h-md). */
+.bar .btn {
+  font-size: 0.9rem;
+}
+.status-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
 .room-chip {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
-  padding: 5px 10px;
+  height: var(--h-md);
+  padding: 0 12px;
   border-radius: 10px;
   border: 1px solid transparent;
   background: var(--accent-soft);
@@ -455,6 +453,7 @@ function fmtTime(ts: number) {
 }
 .modes {
   display: flex;
+  height: var(--h-md);
   background: var(--panel-3);
   border-radius: 12px;
   padding: 3px;
@@ -465,7 +464,7 @@ function fmtTime(ts: number) {
   background: transparent;
   color: var(--muted);
   font-weight: 700;
-  padding: 0.4em 0.9em;
+  padding: 0 0.9em;
   border-radius: 9px;
   cursor: pointer;
   transition:
@@ -501,10 +500,11 @@ function fmtTime(ts: number) {
   display: flex;
   align-items: center;
   gap: 8px;
+  height: var(--h-md);
   background: var(--panel);
   border: 1px solid var(--line-2);
-  border-radius: 12px;
-  padding: 3px 10px 3px 3px;
+  border-radius: 10px;
+  padding: 0 10px 0 4px;
   cursor: pointer;
   color: var(--text);
   box-shadow: var(--shadow-sm);
@@ -513,8 +513,8 @@ function fmtTime(ts: number) {
   border-color: var(--accent);
 }
 .mini-qr {
-  width: 34px;
-  border-radius: 8px;
+  width: 30px;
+  border-radius: 6px;
 }
 .join-url {
   font-weight: 800;
@@ -531,10 +531,9 @@ function fmtTime(ts: number) {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 290px;
+  grid-template-columns: 300px minmax(0, 1fr);
 }
-.side,
-.right {
+.side {
   padding: 14px 12px;
   border-right: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.55);
@@ -542,30 +541,8 @@ function fmtTime(ts: number) {
   flex-direction: column;
   gap: 14px;
 }
-.right {
-  border-right: none;
-  border-left: 1px solid var(--line);
-}
 .main {
-  padding: 16px 20px 30px;
-}
-.log {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  font-size: 0.8rem;
-  color: var(--muted);
-}
-.log-row {
-  line-height: 1.3;
-}
-.keys {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 0.85rem;
-  color: var(--muted);
-  padding: 10px 12px;
+  padding: 16px 24px 30px;
 }
 .toasts {
   position: fixed;
@@ -596,24 +573,21 @@ function fmtTime(ts: number) {
   border-color: #b5e5c6;
   color: var(--ok-2);
 }
+/* Узкий экран компьютера или планшет: подписи у кнопок шапки прячутся, остаются значки. */
+@media (max-width: 1360px) {
+  .has-lbl .lbl {
+    display: none;
+  }
+  .has-lbl {
+    padding: 0 0.75em;
+  }
+}
 @media (max-width: 1180px) {
   .layout {
     grid-template-columns: 270px minmax(0, 1fr);
   }
-  .right {
-    grid-column: 1 / -1;
-    border-left: none;
-    border-top: 1px solid var(--line);
-    flex-direction: row;
-    flex-wrap: wrap;
-  }
-  .right > * {
-    flex: 1 1 260px;
-  }
-  .host {
-    height: auto;
-    min-height: 100vh;
-    overflow: visible;
+  .join-url {
+    display: none;
   }
 }
 
@@ -621,7 +595,7 @@ function fmtTime(ts: number) {
 .mode-select {
   width: auto;
   min-width: 0;
-  padding: 0.35em 2em 0.35em 0.75em;
+  padding: 0 2em 0 0.75em;
   border-radius: 10px;
   border-color: transparent;
   background-color: var(--accent-soft);
@@ -631,7 +605,7 @@ function fmtTime(ts: number) {
 .m-tabs {
   flex: none;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   background: rgba(255, 255, 255, 0.97);
   border-top: 1px solid var(--line);
   box-shadow: 0 -6px 18px rgba(21, 26, 45, 0.06);
@@ -667,9 +641,6 @@ function fmtTime(ts: number) {
   box-shadow: 0 0 0 2px var(--panel);
   animation: pulse 0.8s infinite;
 }
-.m-ranking {
-  margin-top: 18px;
-}
 @media (max-width: 760px) {
   /* Как приложение: шапка и вкладки на месте, прокручивается только содержимое вкладки. */
   .host {
@@ -691,25 +662,23 @@ function fmtTime(ts: number) {
     width: 28px;
     height: 28px;
   }
-  .bar .btn.small {
+  .bar .btn {
     font-size: 0.95rem;
   }
   .join-btn {
-    padding: 3px;
+    padding: 0 4px;
   }
   .room-chip {
-    padding: 6px 9px;
+    padding: 0 10px;
     font-size: 1rem;
-  }
-  .mini-qr {
-    width: 30px;
   }
   .layout.m {
     display: flex;
     flex-direction: column;
   }
   .layout.m > .side,
-  .layout.m > .main {
+  .layout.m > .main,
+  .layout.m > .hist-pane {
     flex: 1;
     min-height: 0;
     border: none;

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// Состояние кнопок: кто нажал и с каким отставанием, таймеры, блокировки.
-// На телефоне панель делится на полоску под верхней панелью (состояние и таймер) и список нажатий под игрой.
+// Состояние кнопок игроков и таймеры — в шапке панели ведущего:
+// на компьютере плашкой в самой шапке, на телефоне полоской под ней (только пока кнопки открыты или идёт время).
+// Кто нажал и с каким отставанием — отдельным списком под вопросом (variant="ranking").
 import { computed } from 'vue'
 import { competitorMap, timerLeft } from '../../lib/util'
 import Icon from '../../components/Icon.vue'
 import { useHost } from './ctx'
 
-const props = withDefaults(defineProps<{ variant?: 'panel' | 'strip' | 'ranking' }>(), { variant: 'panel' })
+const props = withDefaults(defineProps<{ variant?: 'pill' | 'strip' | 'ranking' }>(), { variant: 'pill' })
 
 const { state, now, run } = useHost()
 const s = computed(() => state.value!)
@@ -29,54 +30,35 @@ const status = computed(() =>
 )
 
 const TIMER_LABEL: Record<string, string> = {
-  buzz: 'На нажатие',
-  answer: 'На ответ',
-  main: 'Время вопроса',
-  final: 'Финал',
-  assign: 'Выбор игроков',
+  buzz: 'на нажатие',
+  answer: 'на ответ',
+  main: 'время вопроса',
+  final: 'финал',
+  assign: 'выбор игроков',
 }
 const timers = computed(() =>
   Object.entries(s.value.timers).map(([name, t]) => ({ name, t, left: timerLeft(t, now.value) })),
 )
-// Полоска нужна, только когда кнопки открыты, идёт ответ или тикает таймер.
+// Полоска на телефоне нужна, только когда кнопки открыты, идёт ответ или тикает таймер.
 const buzzing = computed(() => ['armed', 'collecting', 'answering'].includes(b.value.status))
 const stripVisible = computed(() => buzzing.value || timers.value.some((t) => t.left > 0))
 const stripText = computed(() => {
   if (buzzing.value) return status.value.text
   const t = timers.value.find((x) => x.left > 0)
-  return t ? TIMER_LABEL[t.name] ?? status.value.text : status.value.text
+  const label = t ? TIMER_LABEL[t.name] : null
+  return label ? label[0].toUpperCase() + label.slice(1) : status.value.text
 })
 </script>
 
 <template>
-  <div v-if="props.variant === 'strip'" v-show="stripVisible" class="strip" :class="status.cls">
+  <div v-if="props.variant !== 'ranking'" v-show="props.variant === 'pill' || stripVisible" :class="[props.variant, status.cls]">
     <span class="dot" />
-    <span class="grow ellipsis">{{ stripText }}</span>
+    <span class="s-text ellipsis">{{ props.variant === 'strip' ? stripText : status.text }}</span>
     <template v-for="{ name, t, left } in timers" :key="name">
+      <span v-if="props.variant === 'pill'" class="t-label">{{ TIMER_LABEL[name] ?? name }}</span>
       <span class="t-val nums" :class="{ warn: left < 5000 && left > 0 }" :title="TIMER_LABEL[name] ?? name">
         {{ Math.ceil(left / 1000) }} с
       </span>
-      <button
-        v-if="left > 0"
-        class="btn small flat icon"
-        :title="t.running ? 'Пауза' : 'Продолжить'"
-        @click="run(t.running ? 'timer.pause' : 'timer.resume', { name })"
-      >
-        <Icon :name="t.running ? 'pause' : 'play'" />
-      </button>
-      <button class="btn small flat" title="Добавить 5 секунд" @click="run('timer.add', { name, seconds: 5 })">+5</button>
-    </template>
-  </div>
-
-  <div v-else-if="props.variant === 'panel' || b.ranking.length" class="buzz">
-    <div v-if="props.variant === 'panel'" class="status" :class="status.cls">
-      <span class="dot" />
-      {{ status.text }}
-    </div>
-
-    <div v-for="{ name, t, left } in props.variant === 'panel' ? timers : []" :key="name" class="timer-row">
-      <span class="t-label">{{ TIMER_LABEL[name] ?? name }}</span>
-      <span class="t-val nums" :class="{ warn: left < 5000 && left > 0 }">{{ Math.ceil(left / 1000) }} с</span>
       <button
         v-if="left > 0"
         class="btn small flat icon"
@@ -86,96 +68,116 @@ const stripText = computed(() => {
         <Icon :name="t.running ? 'pause' : 'play'" />
       </button>
       <button class="btn small flat" title="Добавить 5 секунд" @click="run('timer.add', { name, seconds: 5 })">+5</button>
-    </div>
+    </template>
+  </div>
 
-    <div v-if="b.ranking.length" class="ranking">
-      <div class="label">Нажатия</div>
-      <div
-        v-for="(r, i) in b.ranking"
-        :key="r.competitorId"
-        class="rank"
-        :class="{ first: b.winner?.competitorId === r.competitorId, late: r.late }"
-        :style="{ '--c': comps.get(r.competitorId)?.color ?? '#888' }"
-      >
-        <span class="pos nums">{{ i + 1 }}</span>
-        <span class="grow ellipsis">
-          {{ comps.get(r.competitorId)?.name ?? '—' }}
-          <span v-if="s.settings.teamMode" class="faint small">({{ playerName(r.playerId) }})</span>
-        </span>
-        <span class="nums small" :title="'Отставание от первого'">{{ i === 0 ? '' : `+${r.delta} мс` }}</span>
-        <span v-if="r.reaction != null" class="nums faint small" title="Время реакции">{{ r.reaction }} мс</span>
-      </div>
-      <p class="hint faint">Время учитывает задержку Wi-Fi каждого телефона.</p>
+  <div v-else-if="b.ranking.length" class="ranking">
+    <div class="label">Нажатия</div>
+    <div
+      v-for="(r, i) in b.ranking"
+      :key="r.competitorId"
+      class="rank"
+      :class="{ first: b.winner?.competitorId === r.competitorId, late: r.late }"
+      :style="{ '--c': comps.get(r.competitorId)?.color ?? '#888' }"
+    >
+      <span class="pos nums">{{ i + 1 }}</span>
+      <span class="grow ellipsis">
+        {{ comps.get(r.competitorId)?.name ?? '—' }}
+        <span v-if="s.settings.teamMode" class="faint small">({{ playerName(r.playerId) }})</span>
+      </span>
+      <span class="nums small" title="Отставание от первого">{{ i === 0 ? '' : `+${r.delta} мс` }}</span>
+      <span v-if="r.reaction != null" class="nums faint small" title="Время реакции">{{ r.reaction }} мс</span>
     </div>
+    <p class="hint faint">Время учитывает задержку Wi-Fi каждого телефона.</p>
   </div>
 </template>
 
 <style scoped>
-.buzz {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.status {
+/* Плашка в шапке (компьютер) и полоска под шапкой (телефон). */
+.pill,
+.strip {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-weight: 800;
-  padding: 9px 12px;
-  border-radius: 12px;
   background: var(--panel);
+}
+.pill {
+  height: var(--h-md);
+  padding: 0 4px 0 14px;
+  border-radius: 12px;
   border: 1px solid var(--line);
   box-shadow: var(--shadow-sm);
+  max-width: 100%;
+  min-width: 0;
 }
-.status .dot {
-  width: 12px;
-  height: 12px;
+.strip {
+  min-height: 44px;
+  padding: 2px 10px 2px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.strip .s-text {
+  flex: 1;
+}
+.dot {
+  width: 11px;
+  height: 11px;
   background: var(--muted);
 }
-.status.armed {
+.armed {
   background: var(--ok-soft);
   border-color: #b5e5c6;
   color: var(--ok-2);
 }
-.status.armed .dot {
+.armed .dot {
   background: var(--ok);
   animation: pulse 0.8s infinite;
 }
-.status.answering {
+.answering {
   background: var(--gold-soft);
   border-color: #f6d58f;
   color: #92400e;
 }
-.status.answering .dot {
+.answering .dot {
   background: var(--gold);
 }
-.status.closed .dot {
+.closed .dot {
   background: var(--warn);
 }
-.status.test .dot {
+.test .dot {
   background: var(--info);
 }
-.timer-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+.pill .s-text {
+  padding-right: 6px;
 }
 .t-label {
-  flex: 1;
-  color: var(--muted);
-  font-size: 0.9rem;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  font-weight: 600;
+  font-size: 0.85rem;
+  opacity: 0.8;
+  white-space: nowrap;
 }
 .t-val {
-  font-weight: 800;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
+  color: var(--text);
+  white-space: nowrap;
 }
 .t-val.warn {
   color: var(--bad);
 }
+.pill .btn,
+.strip .btn {
+  color: var(--text);
+}
+
+/* Кто нажал: под вопросом. */
 .ranking {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  max-width: 560px;
 }
 .rank {
   display: flex;
@@ -205,50 +207,5 @@ const stripText = computed(() => {
 .hint {
   font-size: 0.75rem;
   margin: 2px 0 0;
-}
-
-/* Полоска на телефоне: одна строка под верхней панелью. */
-.strip {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px 5px 14px;
-  min-height: 44px;
-  font-weight: 800;
-  background: var(--panel);
-  border-bottom: 1px solid var(--line);
-}
-.strip .dot {
-  width: 11px;
-  height: 11px;
-  background: var(--muted);
-}
-.strip.armed {
-  background: var(--ok-soft);
-  color: var(--ok-2);
-}
-.strip.armed .dot {
-  background: var(--ok);
-  animation: pulse 0.8s infinite;
-}
-.strip.answering {
-  background: var(--gold-soft);
-  color: #92400e;
-}
-.strip.answering .dot {
-  background: var(--gold);
-}
-.strip.closed .dot {
-  background: var(--warn);
-}
-.strip .t-val {
-  font-size: 1.15rem;
-  color: var(--text);
-}
-.strip .t-val.warn {
-  color: var(--bad);
-}
-.strip .btn {
-  color: var(--text);
 }
 </style>

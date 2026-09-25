@@ -363,7 +363,8 @@ function rename(ti: number) {
   white-space: nowrap;
 }
 .actions {
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
 }
 .theme-card {
   display: flex;

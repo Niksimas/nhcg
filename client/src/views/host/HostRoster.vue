@@ -252,10 +252,9 @@ const title = computed(() => {
             <Icon name="settings" size="0.95em" /> пульт
           </button>
         </template>
-        <span class="grow" />
         <button
           v-if="c.kind === 'player'"
-          class="act danger"
+          class="act danger push"
           title="Удалить игрока"
           @click="removePlayer(s.players.find((p) => p.id === c.id)!)"
         >
@@ -494,14 +493,18 @@ const title = computed(() => {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 2px;
   margin-top: 4px;
+}
+.act.push {
+  margin-left: auto;
 }
 .act {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 7px;
+  height: 24px;
+  padding: 0 6px;
   border-radius: 7px;
   border: none;
   background: transparent;

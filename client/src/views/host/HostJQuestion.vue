@@ -5,6 +5,7 @@ import { computed, ref, watch } from 'vue'
 import type { Competitor, QType } from '../../lib/types'
 import { competitorMap, fmtScore, textOn, TYPE_LABEL } from '../../lib/util'
 import Icon from '../../components/Icon.vue'
+import HostBuzzPanel from './HostBuzzPanel.vue'
 import { useHost } from './ctx'
 
 const { state, run, mobile, showPlayers } = useHost()
@@ -194,6 +195,9 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
       </p>
       <p v-else class="muted hint manual">Счёт можно поправить вручную: кнопки − / + у игрока слева (шаг — цена вопроса) или щелчок по его счёту.</p>
     </div>
+
+    <!-- Кто нажал и с каким отставанием -->
+    <HostBuzzPanel variant="ranking" class="presses" />
   </div>
 </template>
 
@@ -259,6 +263,9 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
 }
 .manual {
   margin-top: 4px;
+}
+.presses {
+  margin-top: 6px;
 }
 .nowrap {
   white-space: nowrap;

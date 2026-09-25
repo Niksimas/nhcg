@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Настройки игры. Каждое изменение сразу отправляется на сервер.
-import { computed } from 'vue'
-import type { Settings } from '../../lib/types'
+// Разделены на вкладки: общие и по каждой игре; открываются на вкладке текущей игры.
+import { computed, ref } from 'vue'
+import type { Mode, Settings } from '../../lib/types'
 import { api } from '../../lib/api'
 import { forgetRoom, formatCode } from '../../lib/room'
 import Icon from '../../components/Icon.vue'
@@ -11,10 +12,19 @@ const { state, run, toast } = useHost()
 const st = computed(() => state.value!.settings)
 const roomCode = computed(() => (state.value?.room?.mode === 'rooms' ? state.value.room.code : null))
 
+type Tab = 'common' | Mode
+const TABS: { id: Tab; title: string }[] = [
+  { id: 'common', title: 'Общие' },
+  { id: 'jeopardy', title: 'Своя игра' },
+  { id: 'khamsa', title: 'Хамса' },
+  { id: 'brainring', title: 'Брейн-ринг' },
+]
+const tab = ref<Tab>(state.value?.mode ?? 'common')
+
 async function closeRoom() {
   const code = roomCode.value
   if (!code) return
-  if (!confirm(`Закрыть комнату ${formatCode(code)}? Игра и счёт будут удалены, все устройства отключатся. Пакеты вопросов останутся в вашей библиотеке.`)) return
+  if (!confirm(`Закрыть комнату ${formatCode(code)}? Игра и счёт будут удалены, все устройства отключатся.`)) return
   try {
     await api('DELETE', '')
     forgetRoom(code)
@@ -46,8 +56,23 @@ async function newGame(keepPlayers: boolean) {
 
 <template>
   <div class="settings">
+    <div class="tabs" role="tablist">
+      <button
+        v-for="t in TABS"
+        :key="t.id"
+        class="tab"
+        :class="{ on: tab === t.id, current: t.id === state?.mode }"
+        role="tab"
+        :aria-selected="tab === t.id"
+        @click="tab = t.id"
+      >
+        {{ t.title }}
+      </button>
+    </div>
+
+    <template v-if="tab === 'common'">
     <section>
-      <h4>Общие</h4>
+      <h4>Команды</h4>
       <label class="check">
         <input type="checkbox" :checked="st.teamMode" @change="bool('teamMode', $event)" />
         <span>Командная игра <span class="muted">(лучше включать до начала игры)</span></span>
@@ -76,6 +101,24 @@ async function newGame(keepPlayers: boolean) {
     </section>
 
     <section>
+      <h4>Игра</h4>
+      <div class="row wrap">
+        <button class="btn" @click="run('game.lobby')"><Icon name="home" /> Вернуться в лобби</button>
+        <button class="btn" @click="newGame(true)"><Icon name="refresh" /> Новая игра (игроки остаются)</button>
+        <button class="btn bad" @click="newGame(false)"><Icon name="trash" /> Сбросить всё</button>
+      </div>
+    </section>
+
+    <section v-if="roomCode">
+      <h4>Комната {{ formatCode(roomCode) }}</h4>
+      <p class="muted note">Комната удаляется сама, если в ней долго никого нет.</p>
+      <div class="row wrap">
+        <button class="btn bad" @click="closeRoom"><Icon name="logout" /> Закрыть комнату</button>
+      </div>
+    </section>
+    </template>
+
+    <section v-else-if="tab === 'jeopardy'">
       <h4>Своя игра</h4>
       <label class="field">
         <span>Правила</span>
@@ -179,7 +222,7 @@ async function newGame(keepPlayers: boolean) {
       </template>
     </section>
 
-    <section>
+    <section v-else-if="tab === 'khamsa'">
       <h4>Хамса</h4>
       <div class="grid">
         <label class="field">
@@ -225,7 +268,7 @@ async function newGame(keepPlayers: boolean) {
       </p>
     </section>
 
-    <section>
+    <section v-else>
       <h4>Брейн-ринг</h4>
       <div class="grid">
         <label class="field">
@@ -289,26 +332,6 @@ async function newGame(keepPlayers: boolean) {
         Если вопрос не взят — его очки переходят на следующий вопрос
       </label>
     </section>
-
-    <section>
-      <h4>Игра</h4>
-      <div class="row wrap">
-        <button class="btn" @click="run('game.lobby')"><Icon name="home" /> Вернуться в лобби</button>
-        <button class="btn" @click="newGame(true)"><Icon name="refresh" /> Новая игра (игроки остаются)</button>
-        <button class="btn bad" @click="newGame(false)"><Icon name="trash" /> Сбросить всё</button>
-      </div>
-    </section>
-
-    <section v-if="roomCode">
-      <h4>Комната {{ formatCode(roomCode) }}</h4>
-      <p class="muted note">
-        Комната удаляется сама, если в ней долго никого нет. Пакеты вопросов хранятся в вашей библиотеке и доступны в новых
-        комнатах, созданных в этом браузере.
-      </p>
-      <div class="row wrap">
-        <button class="btn bad" @click="closeRoom"><Icon name="logout" /> Закрыть комнату</button>
-      </div>
-    </section>
   </div>
 </template>
 
@@ -316,7 +339,51 @@ async function newGame(keepPlayers: boolean) {
 .settings {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 14px;
+}
+.tabs {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  height: var(--h-md);
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--panel-3);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  box-shadow: 0 0 0 6px var(--panel);
+}
+.tab {
+  position: relative;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tab:hover:not(.on) {
+  color: var(--text);
+}
+.tab.on {
+  background: var(--panel);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+/* Точка у вкладки игры, которая сейчас выбрана. */
+.tab.current::after {
+  content: '';
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 section {
   display: flex;
@@ -343,10 +410,18 @@ h4 {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px 14px;
+  align-items: end;
 }
 @media (max-width: 640px) {
   .grid {
     grid-template-columns: 1fr;
+  }
+  .tab {
+    font-size: 0.88rem;
+  }
+  .tab.current::after {
+    top: 4px;
+    right: 4px;
   }
 }
 </style>
