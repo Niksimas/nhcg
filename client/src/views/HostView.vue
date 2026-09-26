@@ -15,6 +15,7 @@ import HostRoster from './host/HostRoster.vue'
 import HostLobby from './host/HostLobby.vue'
 import HostJeopardy from './host/HostJeopardy.vue'
 import HostBrainRing from './host/HostBrainRing.vue'
+import HostReaction from './host/HostReaction.vue'
 import HostBuzzPanel from './host/HostBuzzPanel.vue'
 import HostSettings from './host/HostSettings.vue'
 import HostJoin from './host/HostJoin.vue'
@@ -49,7 +50,7 @@ function showTab(t: Tab) {
 watch(
   () => {
     const s = state.value
-    return s ? [s.stage, s.buzzer.status, s.jeopardy?.stage, s.jeopardy?.question?.id, s.brainring?.stage].join('|') : ''
+    return s ? [s.stage, s.buzzer.status, s.jeopardy?.stage, s.jeopardy?.question?.id, s.brainring?.stage, s.reaction?.stage].join('|') : ''
   },
   () => {
     if (mobile.value && tab.value !== 'game') gameAlert.value = true
@@ -171,7 +172,7 @@ function hotkeyAction(e: KeyboardEvent): { name: string; args?: Record<string, u
   if ((s.mode === 'jeopardy' || s.mode === 'khamsa') && s.jeopardy) {
     const j = s.jeopardy
     const q = j.question
-    const sport = j.format === 'sport' || j.format === 'khamsa'
+    const sport = j.format !== 'tv'
     if (j.stage === 'question' && q) {
       if (key === 'space' && q.step === 'reading') return { name: 'j.arm' }
       if (key === 'enter' && q.step === 'answering') return { name: 'j.judge', args: { correct: true } }
@@ -182,6 +183,12 @@ function hotkeyAction(e: KeyboardEvent): { name: string; args?: Record<string, u
     // Спортивный формат: Enter — дальше по порядку (выбор игроков → тема → вопросы → следующая тема).
     if (sport && (key === 'enter' || key === 'right') && ['assign', 'theme', 'board'].includes(j.stage)) return { name: 'j.next' }
     if (j.stage === 'roundEnd' && key === 'enter') return { name: 'j.nextRound' }
+    return null
+  }
+  if (s.mode === 'reaction' && s.reaction) {
+    const running = s.reaction.stage === 'run'
+    if (key === 'space' && !running) return { name: 'r.start' }
+    if ((key === 'esc' || key === 'enter') && running) return { name: 'r.stop' }
     return null
   }
   if (s.mode === 'brainring' && s.brainring) {
@@ -278,11 +285,13 @@ function openScreen() {
             <button class="mode-btn" :class="{ on: mode === 'jeopardy' }" @click="switchMode('jeopardy')">Своя игра</button>
             <button class="mode-btn" :class="{ on: mode === 'brainring' }" @click="switchMode('brainring')">Брейн-ринг</button>
             <button class="mode-btn" :class="{ on: mode === 'khamsa' }" @click="switchMode('khamsa')">Хамса</button>
+            <button class="mode-btn" :class="{ on: mode === 'reaction' }" title="Тест реакции" @click="switchMode('reaction')">Реакция</button>
           </div>
           <select v-else class="select mode-select" :value="mode" aria-label="Режим игры" @change="onModeSelect">
             <option value="jeopardy">Своя игра</option>
             <option value="brainring">Брейн-ринг</option>
             <option value="khamsa">Хамса</option>
+            <option value="reaction">Тест реакции</option>
           </select>
         </div>
         <!-- Состояние кнопок игроков и таймер: на компьютере — прямо в шапке, на телефоне — полоской под ней. -->
@@ -332,6 +341,7 @@ function openScreen() {
           <HostLobby v-if="state.stage === 'lobby'" />
           <HostJeopardy v-else-if="(mode === 'jeopardy' || mode === 'khamsa') && state.jeopardy" />
           <HostBrainRing v-else-if="mode === 'brainring' && state.brainring" />
+          <HostReaction v-else-if="mode === 'reaction' && state.reaction" />
         </main>
 
         <section v-if="mobile" v-show="tab === 'history'" class="hist-pane scroll">
@@ -573,8 +583,9 @@ function openScreen() {
   border-color: #b5e5c6;
   color: var(--ok-2);
 }
-/* Узкий экран компьютера или планшет: подписи у кнопок шапки прячутся, остаются значки. */
-@media (max-width: 1360px) {
+/* Узкий экран компьютера или планшет: подписи у кнопок шапки прячутся, остаются значки
+   (иначе не помещается плашка состояния кнопок с таймером). */
+@media (max-width: 1540px) {
   .has-lbl .lbl {
     display: none;
   }

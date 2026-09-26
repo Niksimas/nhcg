@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// «Хамса», четвёртый раунд, на телефоне: команды по очереди убирают темы, пока не останется одна.
+// «Хамса», персональный раунд, на телефоне: команды по очереди убирают темы, пока не останется одна.
 // Убирает капитан (или игрок раунда) той команды, чья очередь: сначала выбрать тему, потом подтвердить.
 import { ref, watch } from 'vue'
 import type { JBoardTheme } from '../../lib/types'
@@ -7,7 +7,7 @@ import type { JBoardTheme } from '../../lib/types'
 const props = defineProps<{
   board: JBoardTheme[]
   canStrike: boolean
-  // очередь команды игрока, но убирает капитан или игрок раунда
+  // очередь команды игрока, но убирает капитан или игрок персонального раунда
   myTurn: boolean
   current: string
   isLeader: boolean

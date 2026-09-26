@@ -7,6 +7,7 @@ import { competitorMap, textOn, timerLeft, useConnMessage, useServerNow } from '
 import ScreenLobby from './screen/ScreenLobby.vue'
 import ScreenJeopardy from './screen/ScreenJeopardy.vue'
 import ScreenBrainRing from './screen/ScreenBrainRing.vue'
+import ScreenReaction from './screen/ScreenReaction.vue'
 import QrCode from '../components/QrCode.vue'
 import Icon from '../components/Icon.vue'
 
@@ -85,6 +86,7 @@ const CLEARS_OVERLAY = new Set([
   'battleEnd',
   'strikeStart',
   'strike',
+  'reactionStart',
 ])
 
 function showOverlay(o: { text: string; sub?: string; color: string; kind: string }, ms: number) {
@@ -175,6 +177,7 @@ const mode = computed(() => state.value?.mode)
         :now="now"
         :flash="flash"
       />
+      <ScreenReaction v-else-if="mode === 'reaction' && state.reaction" :state="state" :r="state.reaction" :now="now" />
       <div v-else class="wait center"><p>Ведущий готовит игру…</p></div>
 
       <div v-if="showQr && state.stage !== 'lobby'" class="corner-qr">

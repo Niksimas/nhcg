@@ -167,8 +167,10 @@ export class Hub {
           if (arrival - client.lastBuzz < 40) return // защита от «дребезга» и спама
           client.lastBuzz = arrival
           const at = typeof msg.at === 'number' && Number.isFinite(msg.at) ? msg.at : null
-          const res = game.buzz(client.playerId, at, arrival)
-          this.send(client, { t: 'buzzAck', result: res.result, until: res.until ?? null })
+          // go — когда кнопка загорелась зелёным на телефоне: от этого момента считается скорость нажатия.
+          const go = typeof msg.go === 'number' && Number.isFinite(msg.go) ? msg.go : null
+          const res = game.buzz(client.playerId, at, arrival, go)
+          this.send(client, { t: 'buzzAck', result: res.result, until: res.until ?? null, reaction: res.reaction ?? null })
           return
         }
         case 'join':

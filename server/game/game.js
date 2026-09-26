@@ -1,15 +1,17 @@
 // Ядро игры: игроки/команды, счёт, «честная кнопка», таймеры, отмена действий, автосохранение.
-// Логика конкретных режимов вынесена в jeopardy.js («Своя игра») и brainring.js («Брейн-ринг»).
+// Логика конкретных режимов вынесена в jeopardy.js («Своя игра»), khamsa.js («Хамса»), brainring.js («Брейн-ринг»)
+// и reaction.js (тест реакции).
 // Сервер — единственный источник правды: клиенты только показывают присланное состояние.
 
 import { EventEmitter } from 'node:events'
 import { performance } from 'node:perf_hooks'
 import { defaultSettings, sanitizeSettings, mergeSettings } from './settings.js'
-import { effectivePressTime, collectWindow, rankPresses, median, FAIRNESS, FAIRNESS_ONLINE, syncStartDelay } from './buzzer.js'
+import { effectivePressTime, greenTime, collectWindow, rankPresses, median, FAIRNESS, FAIRNESS_ONLINE, syncStartDelay } from './buzzer.js'
 import { GameError, newId, cleanName, isObj, finite } from './util.js'
 import { JeopardyMode } from './jeopardy.js'
 import { BrainRingMode } from './brainring.js'
 import { KhamsaMode } from './khamsa.js'
+import { ReactionMode } from './reaction.js'
 import { buildViews } from './views.js'
 
 export { GameError, newId, cleanName }
@@ -19,7 +21,8 @@ export const PALETTE = [
   '#ec4899', '#f97316', '#14b8a6', '#84cc16', '#a16207', '#475569',
 ]
 
-const MODE_TITLE = { jeopardy: '«Своя игра»', brainring: '«Брейн-ринг»', khamsa: '«Хамса»' }
+const MODE_TITLE = { jeopardy: '«Своя игра»', brainring: '«Брейн-ринг»', khamsa: '«Хамса»', reaction: 'тест реакции' }
+const FORMAT_TITLE = { sport: 'спортивная, личный зачёт', eq: '«Эрудит-квартет»', tv: 'как в телепередаче' }
 
 const MAX_PLAYERS = 100
 const MAX_TEAMS = 50
@@ -38,7 +41,12 @@ export class Game extends EventEmitter {
     this.persist = opts.persist ?? null
     this.saveDelay = opts.saveDelay ?? 400
     this.state = Game.initialState()
-    this.modes = { jeopardy: new JeopardyMode(this), brainring: new BrainRingMode(this), khamsa: new KhamsaMode(this) }
+    this.modes = {
+      jeopardy: new JeopardyMode(this),
+      brainring: new BrainRingMode(this),
+      khamsa: new KhamsaMode(this),
+      reaction: new ReactionMode(this),
+    }
     this.undoStack = []
     this.presence = new Map() // playerId -> { conns, pings: number[], ping }
     this.earlyLocks = new Map() // competitorId -> момент (серверное время), до которого кнопка заблокирована
@@ -61,6 +69,7 @@ export class Game extends EventEmitter {
       jeopardy: JeopardyMode.initialState(),
       brainring: BrainRingMode.initialState(),
       khamsa: KhamsaMode.initialState(),
+      reaction: ReactionMode.initialState(),
       log: [],
     }
   }
@@ -150,6 +159,23 @@ export class Game extends EventEmitter {
     if (!p || p.teamId !== teamId) throw new GameError('Игрок не в этой команде')
     t.captainId = p.id
     this.log(`Капитан команды «${t.name}»: ${p.name}`)
+  }
+
+  // Кнопка команды в «Брейн-ринге»: у игрока, которому её отдал ведущий, иначе — у капитана.
+  buttonHolder(teamId) {
+    const t = this.team(teamId)
+    if (!t) return null
+    const p = t.buttonId ? this.player(t.buttonId) : null
+    return p && p.teamId === teamId ? p.id : this.captainOf(teamId)
+  }
+
+  setButton(teamId, playerId) {
+    const t = this.team(teamId)
+    if (!t) throw new GameError('Команда не найдена')
+    const p = this.player(playerId)
+    if (!p || p.teamId !== teamId) throw new GameError('Игрок не в этой команде')
+    t.buttonId = p.id
+    this.log(`Кнопка команды «${t.name}»: ${p.name}`)
   }
 
   presenceOf(playerId) {
@@ -274,7 +300,7 @@ export class Game extends EventEmitter {
     if (this.state.teams.some((t) => t.name.toLowerCase() === clean.toLowerCase())) {
       throw new GameError('Команда с таким названием уже есть')
     }
-    const team = { id: newId(), name: clean, color: this.nextColor(this.state.teams), captainId: null }
+    const team = { id: newId(), name: clean, color: this.nextColor(this.state.teams), captainId: null, buttonId: null }
     this.state.teams.push(team)
     this.log(`Создана команда «${clean}»`)
     return team
@@ -428,14 +454,18 @@ export class Game extends EventEmitter {
     return collectWindow(this.connectedRtts(), this.fairness())
   }
 
-  // Нажатие кнопки игроком. claimed — момент нажатия в серверном времени по часам клиента.
-  buzz(playerId, claimed, arrival = this.now()) {
+  // Нажатие кнопки игроком. claimed — момент нажатия, go — момент, когда кнопка загорелась зелёным на его телефоне
+  // (оба — в серверном времени по часам клиента).
+  buzz(playerId, claimed, arrival = this.now(), go = null) {
     const player = this.player(playerId)
     if (!player) return { result: 'unknown' }
+    const b = this.state.buzzer
+    const rtt = this.pingOf(playerId)
+    const t = effectivePressTime({ claimed, arrival, rtt }, this.fairness())
+    // Тест реакции: записывается нажатие каждого игрока, команды не важны.
+    if (this.state.stage === 'game' && b.status !== 'test' && this.mode.press) return this.mode.press(playerId, t, arrival, go)
     const cid = this.competitorOf(playerId)
     if (!cid) return { result: 'noTeam' }
-    const b = this.state.buzzer
-    const t = effectivePressTime({ claimed, arrival, rtt: this.pingOf(playerId) }, this.fairness())
 
     if (b.status === 'test') {
       this.emitEvent('test', { playerId, competitorId: cid })
@@ -446,23 +476,26 @@ export class Game extends EventEmitter {
     const denied = this.mode.buzzDenied?.(cid, playerId)
     if (denied) return { result: denied }
     if (b.lockedOut.includes(cid)) return { result: 'locked' }
+    // Скорость считается от момента, когда кнопка загорелась у этого игрока.
+    const start = greenTime({ go, openedAt: b.armedAt, rtt }, this.fairness())
 
     if (b.status === 'answering') {
       // Опоздавшие нажатия запоминаем только для таблицы «кто за кем».
-      if (finite(b.armedAt) && t >= b.armedAt && !b.presses.some((p) => p.competitorId === cid)) {
-        b.presses.push({ playerId, competitorId: cid, t, arrival, late: true })
+      if (finite(b.armedAt) && t >= start && !b.presses.some((p) => p.competitorId === cid)) {
+        b.presses.push({ playerId, competitorId: cid, t, arrival, start, late: true })
         this.changed()
       }
       return { result: 'late' }
     }
 
-    if (b.status === 'closed' || t < b.armedAt) return this.earlyPress(cid, playerId, t)
+    // Нажал раньше, чем кнопка загорелась на его телефоне, — раннее нажатие (блокировка или фальстарт по правилам режима).
+    if (b.status === 'closed' || t < start) return this.earlyPress(cid, playerId, t)
 
     const lock = this.earlyLocks.get(cid)
     if (lock && t < lock) return { result: 'early', until: lock }
     if (b.presses.some((p) => p.competitorId === cid)) return { result: 'dup' }
 
-    b.presses.push({ playerId, competitorId: cid, t, arrival, late: false })
+    b.presses.push({ playerId, competitorId: cid, t, arrival, start, late: false })
     if (b.status === 'armed') {
       b.status = 'collecting'
       this.collectHandle = this.timerApi.setTimeout(() => this.resolveBuzz(), this.collectWindowMs())
@@ -507,7 +540,7 @@ export class Game extends EventEmitter {
     }
     const w = valid[0]
     b.status = 'answering'
-    b.winner = { playerId: w.playerId, competitorId: w.competitorId, t: w.t, reaction: w.t - b.armedAt }
+    b.winner = { playerId: w.playerId, competitorId: w.competitorId, t: w.t, reaction: w.t - (w.start ?? b.armedAt) }
     const player = this.player(w.playerId)
     this.log(
       `Первым нажал: ${this.competitorName(w.competitorId)}` +
@@ -666,6 +699,7 @@ export class Game extends EventEmitter {
     s.jeopardy = snap.jeopardy
     s.brainring = snap.brainring
     s.khamsa = snap.khamsa
+    // Результаты теста реакции — журнал попыток, а не ход игры: отмена их не трогает.
     this.log(`Отменено: ${item.label}`)
     this.emitEvent('undo', { label: item.label })
     this.changed()
@@ -715,6 +749,7 @@ export class Game extends EventEmitter {
     s.jeopardy = JeopardyMode.initialState()
     s.brainring = BrainRingMode.initialState()
     s.khamsa = KhamsaMode.initialState()
+    s.reaction = ReactionMode.initialState()
     if (!keepPlayers) {
       for (const p of s.players) this.emit('kick', p.id)
       s.players = []
@@ -728,16 +763,23 @@ export class Game extends EventEmitter {
   updateSettings(patch) {
     const clean = sanitizeSettings(patch)
     const changed = (key) => key in clean && clean[key] !== this.settings[key]
+    // Формат «Своей игры» задаёт вид зачёта: спортивная — личный, «Эрудит-квартет» — командный.
+    if (changed('jFormat') && !('teamMode' in clean) && this.state.mode === 'jeopardy') {
+      if (clean.jFormat === 'sport') clean.teamMode = false
+      if (clean.jFormat === 'eq') clean.teamMode = true
+    }
+    if (changed('jFormat')) this.log(`«Своя игра»: ${FORMAT_TITLE[clean.jFormat]}`)
     const teamModeChanged = changed('teamMode')
     // Формат «Своей игры», её скелет и порядок игры за столом меняют сам ход раунда — начинаем текущий раунд заново
     // (сыгранные вопросы, которые остались в новом скелете, так и считаются сыгранными).
-    const formatChanged = ['jFormat', 'jTableMode', 'jRounds', 'jThemes', 'jQuestions', 'jFinal'].some(changed)
+    const formatChanged = ['jFormat', 'jTableMode', 'jSportThemes', 'jEqThemes', 'jRounds', 'jThemes', 'jQuestions', 'jFinal'].some(changed)
     Object.assign(this.state.settings, clean)
     if (teamModeChanged) {
       // Прежние участники кнопки (игроки ↔ команды) больше не существуют.
       this.stopTimers()
       this.setBuzzer(this.state.stage === 'lobby' ? 'test' : 'off')
       this.undoStack = []
+      if (this.state.stage === 'game' && formatChanged && this.state.mode === 'jeopardy') this.mode.sanitize()
       if (this.state.stage === 'game') this.mode.start()
     } else if (formatChanged && this.state.stage === 'game' && this.state.mode === 'jeopardy') {
       this.stopTimers()
@@ -759,7 +801,7 @@ export class Game extends EventEmitter {
     } else {
       // Команды «j.» — общие для «Своей игры» и «Хамсы»: их выполняет текущий из этих режимов.
       const jMode = this.state.mode === 'khamsa' ? 'khamsa' : 'jeopardy'
-      const modeName = name.startsWith('j.') ? jMode : name.startsWith('br.') ? 'brainring' : null
+      const modeName = name.startsWith('j.') ? jMode : name.startsWith('br.') ? 'brainring' : name.startsWith('r.') ? 'reaction' : null
       const handler = modeName && this.modes[modeName].commands[name]
       if (!handler) throw new GameError(`Неизвестная команда: ${name}`)
       if (this.state.mode !== modeName) throw new GameError('Эта команда относится к другому режиму')
@@ -823,6 +865,11 @@ export class Game extends EventEmitter {
       s.stage = saved.stage === 'game' ? 'game' : 'lobby'
       s.mode = this.modes[saved.mode] ? saved.mode : 'jeopardy'
       s.settings = mergeSettings(saved.settings)
+      // До «Эрудит-квартета» спортивная командная игра называлась спортивной — продолжаем её в новом формате.
+      if (isObj(saved.settings) && !('jEqThemes' in saved.settings) && s.settings.jFormat === 'sport' && s.settings.teamMode) {
+        s.settings.jFormat = 'eq'
+        s.settings.jEqThemes = s.settings.jThemes
+      }
       s.players = (Array.isArray(saved.players) ? saved.players : [])
         .filter((p) => isObj(p) && typeof p.id === 'string' && typeof p.token === 'string')
         .map((p) => ({
@@ -840,6 +887,7 @@ export class Game extends EventEmitter {
           name: cleanName(t.name, 32) || 'Команда',
           color: t.color || PALETTE[0],
           captainId: typeof t.captainId === 'string' ? t.captainId : null,
+          buttonId: typeof t.buttonId === 'string' ? t.buttonId : null,
         }))
       for (const p of s.players) if (p.teamId && !s.teams.some((t) => t.id === p.teamId)) p.teamId = null
       if (isObj(saved.scores)) {
@@ -868,11 +916,10 @@ export class Game extends EventEmitter {
       if (isObj(saved.jeopardy)) s.jeopardy = { ...s.jeopardy, ...saved.jeopardy }
       if (isObj(saved.brainring)) s.brainring = { ...s.brainring, ...saved.brainring }
       if (isObj(saved.khamsa)) s.khamsa = { ...s.khamsa, ...saved.khamsa }
+      if (isObj(saved.reaction)) s.reaction = { ...s.reaction, ...saved.reaction }
       this.state = s
       for (const t of s.teams) this.fixCaptain(t.id)
-      this.modes.jeopardy.sanitize()
-      this.modes.brainring.sanitize()
-      this.modes.khamsa.sanitize()
+      for (const mode of Object.values(this.modes)) mode.sanitize()
       this.log('Игра восстановлена после перезапуска сервера')
       this.changed()
       return true
@@ -952,6 +999,7 @@ const HOST_COMMANDS = {
   },
   'team.remove': (g, a) => g.removeTeam(a.teamId),
   'team.captain': (g, a) => g.setCaptain(a.teamId, a.playerId),
+  'team.button': (g, a) => g.setButton(a.teamId, a.playerId),
 
   'timer.pause': (g, a) => g.pauseTimer(String(a.name)),
   'timer.resume': (g, a) => g.resumeTimer(String(a.name)),

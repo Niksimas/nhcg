@@ -28,19 +28,43 @@ const MODES: { id: Mode; title: string; text: string }[] = [
   {
     id: 'jeopardy',
     title: 'Своя игра',
-    text: 'Темы по 5 вопросов (10–50), за ошибку — минус. Раунды: открытый, полуоткрытый, закрытый, командирский.',
+    text: 'Спортивная (личный зачёт, 10 тем), «Эрудит-квартет» (команды, 4 раунда) или как на ТВ. Темы по 5 вопросов, за ошибку — минус.',
   },
   {
     id: 'brainring',
     title: 'Брейн-ринг',
-    text: 'Бои команд по 5 вопросов, минута на обсуждение, фальстарты. За победу в бою +1 в сквозную таблицу.',
+    text: 'Бои команд по 5 вопросов, одна кнопка на команду, минута на обсуждение, фальстарты. Сквозная турнирная таблица.',
   },
   {
     id: 'khamsa',
     title: 'Хамса',
-    text: 'Команды по 5 игроков, 5 раундов: явный, полуявный, тайный, четвёртый с вычёркиванием тем и «Хамса» — вопрос на ставку.',
+    text: 'Команды по 5 игроков, 5 раундов: явный, полуявный, тайный, персональный и «Хамса» — вопрос на ставку. Фальстарта нет.',
+  },
+  {
+    id: 'reaction',
+    title: 'Тест реакции',
+    text: 'По сигналу жмут все — программа записывает время каждого нажатия. Проверка кнопок и разминка перед игрой.',
   },
 ]
+
+// Какие команды нажимают кнопку в выбранном режиме.
+const teamHint = computed(() => {
+  if (s.value.mode === 'brainring') return 'у команды одна кнопка — телефон капитана (ведущий может отдать её другому игроку)'
+  if (s.value.mode === 'reaction') return 'в тесте реакции каждый игрок жмёт за себя'
+  if (s.value.mode === 'jeopardy' && st.value.jFormat === 'tv') return 'нажать может любой участник команды'
+  return 'тему от команды играет один игрок — его выбирает капитан'
+})
+// Формат «Своей игры» и зачёт не совпадают (например, после смены режима).
+const formatWarning = computed(() => {
+  if (s.value.mode !== 'jeopardy') return null
+  if (st.value.jFormat === 'sport' && st.value.teamMode) {
+    return { text: 'Спортивная игра — личный зачёт, а сейчас включена командная игра: нажатие любого игрока пойдёт в счёт команды.', fix: false }
+  }
+  if (st.value.jFormat === 'eq' && !st.value.teamMode) {
+    return { text: '«Эрудит-квартет» — командная игра. Включите командную игру и создайте команды.', fix: true }
+  }
+  return null
+})
 
 const st = computed(() => s.value.settings)
 
@@ -144,44 +168,70 @@ function openScreen() {
           <input type="checkbox" :checked="s.settings.teamMode" @change="toggleTeams" />
           <span>
             <b>Командная игра</b>
-            <span class="muted"> — игроки объединяются в команды, нажать может любой участник команды</span>
+            <span class="muted"> — игроки объединяются в команды; {{ teamHint }}</span>
           </span>
         </label>
         <div v-if="s.settings.teamMode" class="row add-team">
-          <input v-model="newTeam" class="input" maxlength="32" placeholder="Название новой команды" @keydown.enter="addTeam" />
+          <input
+            :value="newTeam"
+            class="input"
+            maxlength="32"
+            placeholder="Название новой команды"
+            @input="newTeam = ($event.target as HTMLInputElement).value"
+            @keydown.enter="addTeam"
+          />
           <button class="btn" :disabled="!newTeam.trim()" @click="addTeam"><Icon name="plus" /> Добавить</button>
         </div>
+        <p v-if="formatWarning" class="warn-note">
+          {{ formatWarning.text }}
+          <button class="text-link" @click="toggleTeams">{{ formatWarning.fix ? 'Включить командную игру' : 'Выключить командную игру' }}</button>
+        </p>
       </div>
     </section>
 
     <section class="card">
-      <div class="step-title"><span class="num">3</span> Ход игры</div>
-      <p class="muted small sheet">
+      <div class="step-title"><span class="num">3</span> {{ s.mode === 'reaction' ? 'Попытки' : 'Ход игры' }}</div>
+      <p v-if="s.mode === 'reaction'" class="muted small sheet">
+        Ведущий запускает попытку, и через случайное время у всех телефонов одновременно загорается «Жми!». Программа
+        записывает время каждого нажатия; нажатие до сигнала — фальстарт. Лучшее и среднее время копятся по всем попыткам.
+      </p>
+      <p v-else class="muted small sheet">
         Вопросы вы читаете со своего листа — программа ведёт кнопки, время и счёт.
         {{ s.mode === 'brainring' ? '' : 'Названия тем можно вписать по ходу игры, щёлкнув по теме.' }}
       </p>
       <template v-if="s.mode === 'jeopardy'">
         <div class="shape">
-          <label class="field">
+          <label class="field wide">
             <span>Правила</span>
             <select class="select" :value="st.jFormat" @change="setValue('jFormat', ($event.target as HTMLSelectElement).value)">
-              <option value="sport">спортивные</option>
+              <option value="sport">спортивная (личный зачёт)</option>
+              <option value="eq">«Эрудит-квартет» (команды)</option>
               <option value="tv">как на ТВ</option>
             </select>
           </label>
-          <label class="field">
-            <span>Раундов</span>
-            <input class="input nums" type="number" min="1" max="20" :value="st.jRounds" @change="setNum('jRounds', $event)" />
+          <label v-if="st.jFormat === 'sport'" class="field">
+            <span>Тем в бою</span>
+            <input class="input nums" type="number" min="1" max="30" :value="st.jSportThemes" @change="setNum('jSportThemes', $event)" />
           </label>
-          <label class="field">
+          <label v-if="st.jFormat === 'eq'" class="field">
             <span>Тем в раунде</span>
-            <input class="input nums" type="number" min="1" max="12" :value="st.jThemes" @change="setNum('jThemes', $event)" />
+            <input class="input nums" type="number" min="1" max="12" :value="st.jEqThemes" @change="setNum('jEqThemes', $event)" />
           </label>
+          <template v-if="st.jFormat === 'tv'">
+            <label class="field">
+              <span>Раундов</span>
+              <input class="input nums" type="number" min="1" max="20" :value="st.jRounds" @change="setNum('jRounds', $event)" />
+            </label>
+            <label class="field">
+              <span>Тем в раунде</span>
+              <input class="input nums" type="number" min="1" max="12" :value="st.jThemes" @change="setNum('jThemes', $event)" />
+            </label>
+          </template>
           <label class="field">
             <span>Вопросов в теме</span>
             <input class="input nums" type="number" min="1" max="10" :value="st.jQuestions" @change="setNum('jQuestions', $event)" />
           </label>
-          <label v-if="st.jFormat === 'sport'" class="field">
+          <label v-if="st.jFormat !== 'tv'" class="field">
             <span>Стоимость</span>
             <select class="select" :value="st.jPrices" @change="setValue('jPrices', ($event.target as HTMLSelectElement).value)">
               <option value="x10">10, 20, 30…</option>
@@ -190,15 +240,32 @@ function openScreen() {
             </select>
           </label>
         </div>
-        <label v-if="st.jFormat === 'tv'" class="check">
+        <p v-if="st.jFormat === 'sport'" class="shape-text small">
+          Один бой: каждый играет за себя, темы идут по порядку, вопросы темы — подряд.
+        </p>
+        <p v-else-if="st.jFormat === 'eq'" class="shape-text small">
+          4 раунда — <b>открытый, полуоткрытый, закрытый и личный</b>. Тему от команды играет один игрок, его выбирает
+          капитан; в личном раунде один игрок играет за команду все темы.
+        </p>
+        <label v-else class="check">
           <input type="checkbox" :checked="st.jFinal" @change="setValue('jFinal', ($event.target as HTMLInputElement).checked)" />
           <span>Финал со ставками после раундов <span class="muted">(стоимость: 100–500 в первом раунде, 200–1000 во втором…)</span></span>
         </label>
       </template>
       <p v-else-if="s.mode === 'khamsa'" class="shape-text">
-        4 раунда по 5 тем из 5 вопросов — <b>явный, полуявный, тайный, четвёртый</b> — и раунд <b>«Хамса»</b> на ставку.
-        Стоимость: 100–500, 200–1000, 300–1500, 400–2000.
+        4 раунда по 5 тем из 5 вопросов — <b>явный, полуявный, тайный, персональный</b> — и раунд <b>«Хамса»</b> на ставку.
+        Стоимость: 100–500, 200–1000, 300–1500, 400–2000. Фальстарта нет — игроки могут перебить ведущего.
       </p>
+      <div v-else-if="s.mode === 'reaction'" class="shape">
+        <label class="check">
+          <input type="checkbox" :checked="st.rRandom" @change="setValue('rRandom', ($event.target as HTMLInputElement).checked)" />
+          <span>Сигнал через случайное время <span class="muted">(1,5–4 с)</span></span>
+        </label>
+        <label class="field">
+          <span>Секунд на нажатие</span>
+          <input class="input nums" type="number" min="1" max="60" :value="st.rTimeout" @change="setNum('rTimeout', $event)" />
+        </label>
+      </div>
       <div v-else class="shape">
         <label class="field">
           <span>Вопросов в бою</span>
@@ -209,11 +276,13 @@ function openScreen() {
           <input class="input nums" type="number" min="5" max="600" :value="st.brMainTime" @change="setNum('brMainTime', $event)" />
         </label>
       </div>
-      <button class="btn ghost small more" @click="openSettings"><Icon name="settings" /> Все настройки: время, штрафы, капитаны</button>
+      <button class="btn ghost small more" @click="openSettings">
+        <Icon name="settings" /> {{ s.mode === 'reaction' ? 'Настройки' : 'Все настройки: время, штрафы, капитаны' }}
+      </button>
     </section>
 
     <div class="start-row">
-      <button class="btn primary huge" @click="start"><Icon name="play" /> Начать игру</button>
+      <button class="btn primary huge" @click="start"><Icon name="play" /> {{ s.mode === 'reaction' ? 'Начать тест реакции' : 'Начать игру' }}</button>
     </div>
   </div>
 </template>
@@ -282,8 +351,16 @@ function openScreen() {
 }
 .modes {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
+}
+.warn-note {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--warn-soft);
+  color: #92400e;
+  font-size: 0.9rem;
 }
 .mode {
   text-align: left;
@@ -341,8 +418,15 @@ function openScreen() {
   gap: 10px 12px;
   margin-bottom: 10px;
 }
+.shape .field.wide {
+  grid-column: span 2;
+}
 .shape-text {
   margin: 0 0 10px;
+}
+.shape-text.small {
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 .more {
   margin-top: 4px;
@@ -356,6 +440,11 @@ function openScreen() {
   align-items: center;
   gap: 8px;
   padding: 8px 0 20px;
+}
+@media (max-width: 1100px) {
+  .modes {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 @media (max-width: 760px) {
   .join {

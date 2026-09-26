@@ -16,7 +16,7 @@ const usedBy = computed(() => {
   return map
 })
 const allPicked = computed(() => props.captain.themes.every((t) => props.captain.picks[t.index]))
-// «Хамса», четвёртый раунд: один игрок на весь раунд (тема -1 — это не тема, а сам выбор).
+// Личный (персональный) раунд: один игрок на весь раунд (тема -1 — это не тема, а сам выбор).
 const leader = computed(() => props.captain.themes.length === 1 && props.captain.themes[0].index === -1)
 
 function label(t: { index: number; name: string | null }) {

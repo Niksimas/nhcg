@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Экран игрока на телефоне: вход в игру и большая кнопка.
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { GameConnection } from '../lib/connection'
 import { setHostKey } from '../lib/api'
@@ -110,6 +110,7 @@ useConnMessage(conn, 'buzzAck', (msg) => {
   if (msg.result === 'falseStart') vibrate([200, 80, 200])
   if (msg.result === 'notAtTable') showToast('Эту тему играет другой игрок вашей команды')
   if (msg.result === 'notInBattle') showToast('Сейчас бой других команд')
+  if (msg.result === 'notButton') showToast(`Кнопка команды — у игрока ${me.value?.brainring?.button?.name ?? 'капитана'}`)
 })
 
 watch(
@@ -143,7 +144,7 @@ const jq = computed(() => (jv.value?.stage === 'question' ? jv.value.question : 
 const myComp = computed(() => (me.value?.competitorId ? comps.value.get(me.value.competitorId) ?? null : null))
 const myTeam = computed(() => state.value?.teams.find((t) => t.id === me.value?.teamId) ?? null)
 const nameOf = (id: string | null | undefined) => (id ? comps.value.get(id)?.name ?? '—' : '—')
-const sport = computed(() => jv.value?.format === 'sport' || jv.value?.format === 'khamsa')
+const sport = computed(() => !!jv.value && jv.value.format !== 'tv')
 const meJ = computed(() => me.value?.jeopardy ?? null)
 const battle = computed(() => br.value?.battle ?? null)
 const battleLine = computed(() => {
@@ -177,12 +178,33 @@ interface ButtonState {
   active: boolean
 }
 
+// Тест реакции: у каждого игрока своя кнопка и своё время.
+function reactionButton(): ButtonState {
+  const r = state.value?.reaction
+  const mr = me.value?.reactionTest
+  if (r?.stage === 'run') {
+    if (mr?.early) return { cls: 'locked', title: 'Фальстарт', sub: 'Нажали до сигнала — ждите следующую попытку', active: false }
+    if (mr?.pressed && mr.reaction != null) {
+      return { cls: 'pressed', title: `${mr.reaction} мс`, sub: mr.place ? `Сейчас вы ${mr.place}-й` : 'Ваша реакция', active: false }
+    }
+    if (now.value - pressedAt.value < 1500) return { cls: 'pressed', title: 'Нажато!', sub: 'Считаем время…', active: false }
+    if (armedSoon.value) return { cls: 'wait', title: 'Внимание…', sub: 'Жмите, когда кнопка загорится зелёным', active: true }
+    return { cls: 'go', title: 'Жми!', active: true }
+  }
+  if (mr?.reaction != null) {
+    return { cls: 'pressed', title: `${mr.reaction} мс`, sub: mr.place ? `${mr.place}-е место из ${mr.of}` : '', active: false }
+  }
+  if (mr?.early) return { cls: 'locked', title: 'Фальстарт', sub: 'Ждите следующую попытку', active: false }
+  return { cls: 'idle', title: 'Ждите сигнал', sub: 'Ведущий начнёт попытку', active: false }
+}
+
 const button = computed<ButtonState>(() => {
   const s = state.value
   const m = me.value
   if (status.value !== 'online' || !s) return { cls: 'offline', title: 'Нет связи', sub: 'Переподключаемся…', active: false }
   if (!m) return { cls: 'idle', title: '…', active: false }
   const b = s.buzzer
+  if (s.mode === 'reaction' && s.stage === 'game' && b.status !== 'test') return reactionButton()
   if (s.settings.teamMode && !m.competitorId) {
     return { cls: 'idle', title: 'Без команды', sub: 'Выберите команду в меню ☰', active: false }
   }
@@ -193,6 +215,12 @@ const button = computed<ButtonState>(() => {
   // «Брейн-ринг»: бой других команд.
   if (me.value?.brainring?.inBattle === false && b.status !== 'test') {
     return { cls: 'idle', title: 'Сейчас играют', sub: battleLine.value.replace(/ \d+/g, '').replace(/ : /g, ' — '), active: false }
+  }
+  // «Брейн-ринг»: у команды одна кнопка — телефон капитана или того, кому её отдал ведущий.
+  if (me.value?.brainring?.isButton === false && b.status !== 'test') {
+    const holder = me.value.brainring.button
+    const sub = holder ? `${holder.name}${holder.connected ? '' : ' — нет связи, скажите ведущему'}` : 'капитан'
+    return { cls: 'idle', title: 'Кнопка у игрока', sub, active: false }
   }
   if (b.status === 'test') {
     const ok = now.value - testOkAt.value < 1300
@@ -256,6 +284,19 @@ const button = computed<ButtonState>(() => {
   return { cls: 'idle', title: 'Ждём вопрос', active: false }
 })
 
+// Когда кнопка загорелась зелёным на этом телефоне (серверное время): от этого момента считается скорость нажатия.
+// Запоминаем вместе с моментом открытия кнопок, к которому он относится (после ошибки кнопки открываются заново).
+let green: { armedAt: number; at: number } | null = null
+watch(
+  () => button.value.cls === 'go',
+  (isGo) => {
+    const armedAt = state.value?.buzzer.armedAt
+    if (!isGo || typeof armedAt !== 'number' || !conn.synced) return
+    // Кадр, в котором зелёная кнопка появится на экране: после обновления страницы — ближайшая отрисовка.
+    void nextTick(() => requestAnimationFrame((frame) => (green = { armedAt, at: conn.toServerTime(frame) })))
+  },
+)
+
 function press(ev?: Event) {
   sound.unlock()
   void keepAwake()
@@ -264,7 +305,8 @@ function press(ev?: Event) {
   const ts = ev?.timeStamp ?? 0
   const local = ts > 0 && Math.abs(performance.now() - ts) < 1000 ? ts : performance.now()
   const at = conn.synced ? conn.toServerTime(local) : undefined
-  if (conn.send({ t: 'buzz', at })) {
+  const go = conn.synced && green && green.armedAt === state.value?.buzzer.armedAt ? green.at : undefined
+  if (conn.send({ t: 'buzz', at, go })) {
     pressedAt.value = conn.toServerTime(local)
     vibrate(25)
   }
@@ -294,6 +336,15 @@ const info = computed<Info>(() => {
   if (s.stage === 'lobby') {
     out.top = MODE_TITLE[s.mode] ?? 'Своя игра'
     out.main = 'Ждём начала игры'
+    return out
+  }
+  if (s.mode === 'reaction' && s.reaction) {
+    const r = s.reaction
+    const mr = me.value?.reactionTest
+    out.top = r.no ? `Тест реакции · попытка ${r.no}` : 'Тест реакции'
+    if (r.stage === 'run') out.main = 'Жмите, как только кнопка загорится'
+    else if (mr?.tries) out.main = `Лучшая: ${mr.best} мс · средняя: ${mr.avg} мс`
+    else out.main = r.stage === 'done' ? 'Ждём следующую попытку' : 'Ждём сигнал ведущего'
     return out
   }
   if (jv.value && sport.value && ['board', 'assign', 'strike', 'theme'].includes(jv.value.stage)) {
@@ -330,7 +381,8 @@ const info = computed<Info>(() => {
       if (q.step === 'special') {
         out.main = q.type === 'cat' ? 'Кот в мешке!' : q.type === 'auction' ? 'Вопрос-аукцион!' : 'Вопрос без риска!'
       } else if (q.step === 'reading') {
-        out.main = 'Слушайте вопрос'
+        // «Хамса»: фальстарта нет — можно перебить ведущего.
+        out.main = j.liveReading ? 'Слушайте вопрос — жмите, как только знаете ответ' : 'Слушайте вопрос'
       } else if (q.step === 'reveal') {
         const right = q.attempts.find((a) => a.correct)
         out.main = right ? `Верно: ${nameOf(right.competitorId)} +${right.delta}` : 'Вопрос не взят'
@@ -575,6 +627,7 @@ const pingClass = computed(() => {
           :me="meFinal"
           :title="jv?.format === 'khamsa' ? jv.rounds[jv.roundIndex]?.name || 'Хамса' : 'Финал'"
           :timer="state?.timers.final"
+          :bet-timer="state?.timers.bets"
           :now="now"
           @bet="sendBet"
           @answer="sendAnswer"
@@ -627,7 +680,7 @@ const pingClass = computed(() => {
         <label class="field">
           <span>Имя</span>
           <div class="row">
-            <input v-model="newName" class="input" maxlength="24" />
+            <input :value="newName" class="input" maxlength="24" @input="newName = ($event.target as HTMLInputElement).value" />
             <button class="btn" :disabled="!newName.trim() || newName.trim() === me.name" @click="saveName">Сохранить</button>
           </div>
         </label>
@@ -641,10 +694,11 @@ const pingClass = computed(() => {
           </div>
           <input
             v-if="!newTeamId && state.settings.allowPlayerTeams"
-            v-model="newTeamName"
+            :value="newTeamName"
             class="input"
             maxlength="32"
             placeholder="Название новой команды"
+            @input="newTeamName = ($event.target as HTMLInputElement).value"
           />
           <button class="btn" :disabled="!newTeamId && !newTeamName.trim()" @click="saveTeam">Перейти в команду</button>
         </div>

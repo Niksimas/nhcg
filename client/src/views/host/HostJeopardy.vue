@@ -17,8 +17,9 @@ const j = computed(() => s.value.jeopardy!)
 const comps = computed(() => competitorMap(s.value))
 const chooser = computed(() => (j.value.chooserId ? comps.value.get(j.value.chooserId) : undefined))
 const standings = computed(() => [...s.value.competitors].sort((a, b) => b.score - a.score))
-const sport = computed(() => j.value.format === 'sport' || j.value.format === 'khamsa')
-// Следующий раунд, который играется в этом формате (финал со ставками спортивный формат пропускает).
+// Темы по порядку (спортивная, «Эрудит-квартет», «Хамса») или табло, как на ТВ.
+const sport = computed(() => j.value.format !== 'tv')
+// Следующий раунд, который играется в этом формате.
 const nextRound = computed(() => {
   const i = j.value.rounds.findIndex((r, idx) => idx > j.value.roundIndex && !r.skip)
   return i >= 0 ? j.value.rounds[i] : null

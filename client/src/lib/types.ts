@@ -1,6 +1,6 @@
 // Типы состояния, которое присылает сервер (см. server/game/views.js).
 
-export type Mode = 'jeopardy' | 'brainring' | 'khamsa'
+export type Mode = 'jeopardy' | 'brainring' | 'khamsa' | 'reaction'
 export type Role = 'host' | 'screen' | 'player'
 export type BuzzerStatus = 'test' | 'off' | 'closed' | 'armed' | 'collecting' | 'answering'
 
@@ -11,7 +11,9 @@ export interface Settings {
   phoneSelect: boolean
   onlineMode: boolean
   joinLocked: boolean
-  jFormat: 'sport' | 'tv'
+  jFormat: 'sport' | 'eq' | 'tv'
+  jSportThemes: number
+  jEqThemes: number
   jRounds: number
   jThemes: number
   jQuestions: number
@@ -32,9 +34,11 @@ export interface Settings {
   hWrongPenalty: boolean
   hAssignRoundTime: number
   hAssignThemeTime: number
+  hBetTime: number
   hFinalTime: number
   jWrongPenalty: boolean
   jEarlyLockMs: number
+  jBetTime: number
   jFinalTime: number
   jFinalOnlyPositive: boolean
   jNewRoundChooser: 'lowest' | 'keep'
@@ -48,8 +52,12 @@ export interface Settings {
   brDrawPoints: number
   brTieMode: 'extra' | 'draw' | 'ask'
   brTotal: 'sum' | 'wins'
+  brTakenPoints: number
   brCarryOver: boolean
   brQuestionValue: number
+  brOneButton: boolean
+  rRandom: boolean
+  rTimeout: number
 }
 
 export interface PlayerInfo {
@@ -65,6 +73,8 @@ export interface TeamInfo {
   name: string
   color: string
   captainId: string | null
+  // у кого кнопка команды в «Брейн-ринге» (null — если кнопка у каждого игрока)
+  buttonId: string | null
 }
 
 export interface Competitor {
@@ -119,6 +129,8 @@ export interface JQuestion {
   number: number
   type: QType
   step: QStep
+  // ведущий дочитал вопрос (в «Хамсе» кнопки открыты с начала вопроса)
+  read: boolean
   basePrice: number
   price: number
   responderId: string | null
@@ -138,12 +150,14 @@ export interface JBoardTheme {
   named?: boolean
   hidden?: boolean
   current?: boolean
-  // вычеркнута командами (четвёртый раунд «Хамсы»)
+  // вычеркнута командами (персональный раунд «Хамсы»)
   struck?: boolean
   questions: JBoardCell[]
 }
 
-export type RoundKind = 'open' | 'semi' | 'closed' | 'captain' | 'leaders' | 'khamsa'
+// Виды раундов «Эрудит-квартета» и «Хамсы»: открытый (явный), полуоткрытый (полуявный), закрытый (тайный),
+// личный (персональный) и раунд «Хамса» со ставками.
+export type RoundKind = 'open' | 'semi' | 'closed' | 'personal' | 'khamsa'
 
 export interface PlayerRef {
   playerId: string
@@ -164,16 +178,22 @@ export interface JFinal {
   step: 'themes' | 'bets' | 'question' | 'reveal'
   themes: { index: number; name: string; removed: boolean }[]
   themeName: string | null
+  // ставки ещё принимаются (время на ставку не вышло)
+  betsOpen: boolean
   participants: JFinalParticipant[]
   current: string | null
 }
 
+export type JFormat = 'sport' | 'eq' | 'tv' | 'khamsa'
+
 export interface JeopardyView {
-  format: 'sport' | 'tv' | 'khamsa'
+  format: JFormat
   stage: 'board' | 'assign' | 'strike' | 'theme' | 'question' | 'roundEnd' | 'final' | 'results'
   roundIndex: number
   // ведущий может отметить кот в мешке, аукцион, вопрос без риска
   specials: boolean
+  // кнопки открыты с начала вопроса — можно перебить ведущего («Хамса»)
+  liveReading: boolean
   rounds: { name: string; type: 'normal' | 'final'; complete: boolean; skip: boolean; kind: RoundKind | null }[]
   chooserId: string | null
   kind: RoundKind | null
@@ -182,10 +202,11 @@ export interface JeopardyView {
   board: JBoardTheme[] | null
   // выбор игроков капитанами
   phase: { scope: 'round' | 'theme' | 'leader'; themes: { index: number; name: string | null }[]; ready: string[] } | null
-  // «Хамса»: номер раунда (1–5), вычёркивание тем и игроки четвёртого раунда
+  // «Хамса»: номер раунда (1–5) и вычёркивание тем персонального раунда
   roundNumber?: number
   strike?: { order: string[]; turn: number; current: string | null; removed: number[] } | null
-  leaders?: Record<string, PlayerRef | null>
+  // игроки личного (персонального) раунда: команда → игрок
+  leaders: Record<string, PlayerRef | null> | null
   // кто за столом в текущей теме: команда → игрок
   table: Record<string, PlayerRef | null> | null
   // расстановка по темам раунда: команда → номер темы → игрок
@@ -245,6 +266,33 @@ export interface BrainRingView {
   nextPair: string[] | null
 }
 
+export interface ReactionResult {
+  playerId: string
+  // null — не нажал или нажал до сигнала (early)
+  reaction: number | null
+  early: boolean
+}
+
+export interface ReactionStat {
+  playerId: string
+  tries: number
+  best: number | null
+  avg: number | null
+  last: number | null
+  falseStarts: number
+  misses: number
+}
+
+export interface ReactionView {
+  stage: 'idle' | 'run' | 'done'
+  no: number
+  signalAt: number | null
+  expected: string[]
+  current: ReactionResult[]
+  stats: ReactionStat[]
+  attempts: number
+}
+
 export interface ServerInfo {
   mode: 'local' | 'rooms'
   code: string
@@ -274,6 +322,7 @@ export interface GameState {
   timers: Record<string, TimerState>
   jeopardy: JeopardyView | null
   brainring: BrainRingView | null
+  reaction: ReactionView | null
   joinUrl: string
   room: RoomInfo | null
   screens: number
@@ -298,7 +347,24 @@ export interface MeView {
   delta: number | null
   reaction: number | null
   isWinner: boolean
-  brainring: { inBattle: boolean | null } | null
+  brainring: {
+    inBattle: boolean | null
+    // у кого кнопка команды (null — кнопка у каждого игрока)
+    button: (PlayerRef & { connected: boolean }) | null
+    isButton: boolean | null
+  } | null
+  // тест реакции
+  reactionTest: {
+    pressed: boolean
+    early: boolean
+    reaction: number | null
+    place: number | null
+    of: number
+    best: number | null
+    avg: number | null
+    tries: number
+    running: boolean
+  } | null
   jeopardy: {
     isCaptain: boolean
     atTable: boolean | null
@@ -313,15 +379,20 @@ export interface MeView {
     } | null
     isChooser: boolean
     canSelect: boolean
-    // «Хамса»: убрать тему может капитан или игрок четвёртого раунда; isLeader — этот игрок играет четвёртый раунд
+    // игрок личного (персонального) раунда
+    isLeader: boolean
+    // «Хамса»: убрать тему может капитан или игрок персонального раунда
     canStrike?: boolean
-    isLeader?: boolean
     final: {
       participant: boolean
       bet: number | null
       maxBet: number
       answer: string | null
       result: boolean | null
+      // кто сдаёт ставку и ответ за команду (если не этот игрок)
+      writer: PlayerRef | null
+      canBet: boolean
+      canAnswer: boolean
     } | null
   } | null
 }

@@ -13,10 +13,8 @@ const comps = computed(() => competitorMap(s.value))
 const nameOf = (id: string) => comps.value.get(id)?.name ?? '—'
 const colorOf = (id: string) => comps.value.get(id)?.color ?? '#888'
 const scoreOf = (id: string) => comps.value.get(id)?.score ?? 0
-const title = computed(() => {
-  const j = s.value.jeopardy!
-  return j.format === 'khamsa' ? `Раунд «${j.rounds[j.roundIndex]?.name || 'Хамса'}»` : 'Финал'
-})
+const j = computed(() => s.value.jeopardy!)
+const title = computed(() => (j.value.format === 'khamsa' ? `Раунд «${j.value.rounds[j.value.roundIndex]?.name || 'Хамса'}»` : 'Финал'))
 
 const betInputs = reactive<Record<string, number | null>>({})
 const participantIds = computed(() => new Set(f.value.participants.map((p) => p.competitorId)))
@@ -36,10 +34,9 @@ async function showQuestion() {
 }
 
 function renameTheme() {
-  const j = s.value.jeopardy!
   const ti = f.value.themes.find((t) => !t.removed)?.index ?? 0
   const name = prompt('Тема вопроса (пусто — без названия)', f.value.themeName ?? '')
-  if (name !== null) void run('j.theme.name', { round: j.roundIndex, theme: ti, name })
+  if (name !== null) void run('j.theme.name', { round: j.value.roundIndex, theme: ti, name })
 }
 
 async function closeAnswers() {
@@ -71,13 +68,19 @@ async function closeAnswers() {
 
     <!-- Участники -->
     <div v-if="f.step === 'themes' || f.step === 'bets'" class="card">
-      <div class="label">Участники финала</div>
+      <div class="label">Участники {{ j.format === 'khamsa' ? 'раунда' : 'финала' }}</div>
+      <div v-if="f.step === 'bets'" class="bets-time">
+        <TimerBar v-if="s.timers.bets" :timer="s.timers.bets" :now="now" label="на ставку" :warn-at="10000" />
+        <span v-if="!f.betsOpen" class="closed-tag">Время на ставку вышло — с телефонов ставки больше не принимаются</span>
+      </div>
       <div class="parts">
         <div v-for="p in f.participants" :key="p.competitorId" class="part" :style="{ '--c': colorOf(p.competitorId) }">
           <span class="grow name">{{ nameOf(p.competitorId) }}</span>
           <span class="muted nums">счёт {{ fmtScore(scoreOf(p.competitorId)) }}</span>
           <template v-if="f.step === 'bets'">
-            <span class="bet nums" :class="{ none: !p.hasBet }">{{ p.hasBet ? `ставка ${p.bet}` : 'нет ставки' }}</span>
+            <span class="bet nums" :class="{ none: !p.hasBet }" :title="p.hasBet ? 'Ставка сделана — игрок изменить её не может' : ''">
+              {{ p.hasBet ? `ставка ${p.bet}` : 'нет ставки' }}
+            </span>
             <input
               v-model.number="betInputs[p.competitorId]"
               class="input small bet-in nums"
@@ -100,7 +103,10 @@ async function closeAnswers() {
           <Icon name="plus" /> {{ c.name }} ({{ fmtScore(c.score) }})
         </button>
       </div>
-      <p v-if="f.step === 'bets'" class="muted small">Игроки делают ставки на телефонах. Ставку можно ввести и вручную.</p>
+      <p v-if="f.step === 'bets'" class="muted small">
+        {{ s.settings.teamMode ? 'Капитаны делают ставки на телефонах' : 'Игроки делают ставки на телефонах' }} — один раз, изменить
+        ставку нельзя. Вы можете вписать или поправить ставку вручную.
+      </p>
     </div>
 
     <div v-if="f.step === 'bets'" class="actions">
@@ -234,6 +240,17 @@ async function closeAnswers() {
 }
 .others {
   margin-top: 10px;
+}
+.bets-time {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 4px;
+}
+.closed-tag {
+  color: var(--bad-2);
+  font-weight: 700;
+  font-size: 0.9rem;
 }
 .small {
   font-size: 0.85rem;

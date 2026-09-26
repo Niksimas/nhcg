@@ -109,10 +109,14 @@ function onMore(p: PlayerInfo, ev: Event) {
   el.value = ''
   if (action === 'host' || action === 'screen') void promote(p.id, action)
   if (action === 'captain' && p.teamId) void run('team.captain', { teamId: p.teamId, playerId: p.id })
+  if (action === 'button' && p.teamId) void run('team.button', { teamId: p.teamId, playerId: p.id })
   if (action.startsWith('team:')) setTeam(p, action.slice(5))
 }
 
 const captainOf = (teamId: string) => s.value.teams.find((t) => t.id === teamId)?.captainId ?? null
+// «Брейн-ринг»: у команды одна кнопка — показываем, у кого она.
+const oneButton = computed(() => s.value.mode === 'brainring' && s.value.settings.brOneButton)
+const buttonOf = (teamId: string) => (oneButton.value ? (s.value.teams.find((t) => t.id === teamId)?.buttonId ?? null) : null)
 
 function setTeam(p: PlayerInfo, teamId: string) {
   void run('player.team', { playerId: p.id, teamId: teamId || null })
@@ -266,6 +270,7 @@ const title = computed(() => {
         <div v-for="p in membersOf(c.id)" :key="`${p.id}-${flash[p.id] ?? 0}`" class="member" :class="{ flash: !!flash[p.id] }">
           <span class="conn-dot" :class="p.connected ? pingClass(p.id) || 'good' : 'off'" />
           <span v-if="p.id === captainOf(c.id)" class="cap" title="Капитан команды">★</span>
+          <span v-if="p.id === buttonOf(c.id)" class="btn-mark" title="Кнопка команды — у этого игрока"><Icon name="bolt" size="0.85em" /></span>
           <input
             v-if="editing && editing.kind === 'player' && editing.id === p.id"
             ref="inputRef"
@@ -281,6 +286,7 @@ const title = computed(() => {
           <select class="select small more-sel" value="" title="Капитан, другая команда, экран, пульт ведущего" @change="onMore(p, $event)">
             <option value="" disabled>⋯</option>
             <option v-if="p.id !== captainOf(c.id)" value="captain">Сделать капитаном</option>
+            <option v-if="oneButton && p.id !== buttonOf(c.id)" value="button">Отдать кнопку команды</option>
             <optgroup label="Перевести в команду">
               <option v-for="t in s.teams.filter((x) => x.id !== p.teamId)" :key="t.id" :value="`team:${t.id}`">{{ t.name }}</option>
               <option value="team:">без команды</option>
@@ -593,6 +599,11 @@ const title = computed(() => {
 .cap {
   color: var(--gold);
   font-size: 0.85rem;
+  flex: none;
+}
+.btn-mark {
+  display: inline-flex;
+  color: var(--accent);
   flex: none;
 }
 </style>

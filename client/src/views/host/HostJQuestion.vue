@@ -51,7 +51,7 @@ const SPECIALS: { type: QType; icon: string; title: string }[] = [
   { type: 'norisk', icon: '🛡', title: 'Без риска' },
 ]
 
-const sport = computed(() => j.value.format === 'sport' || j.value.format === 'khamsa')
+const sport = computed(() => j.value.format !== 'tv')
 // Спортивный формат: сколько вопросов осталось в теме и кто за столом.
 const themeLeft = computed(() => {
   const ti = j.value.themeIndex
@@ -130,7 +130,19 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
 
     <!-- Ход вопроса -->
     <div v-else class="controls">
-      <template v-if="q.step === 'reading'">
+      <template v-if="q.step === 'reading' && j.liveReading">
+        <div class="waiting live"><span class="pulse-dot" /> Кнопки открыты — игроки могут перебить вас</div>
+        <p class="read-hint">
+          Читайте вопрос со своего листа. Кто нажмёт — отвечает сразу, фальстарта нет. Дочитали — нажмите
+          «Вопрос прочитан»: пойдёт время на обдумывание.
+        </p>
+        <button class="btn ok huge" @click="run('j.arm')">
+          <Icon name="clock" /> Вопрос прочитан — время <span class="kbd">Пробел</span>
+        </button>
+        <button class="btn ghost big" @click="run('j.reveal')">Никто не знает — закрыть вопрос <span class="kbd">Esc</span></button>
+      </template>
+
+      <template v-else-if="q.step === 'reading'">
         <p class="read-hint">Прочитайте вопрос со своего листа, затем откройте кнопки.</p>
         <button class="btn ok huge" @click="run('j.arm')">
           <Icon name="bolt" /> Принимать ответы <span class="kbd">Пробел</span>
@@ -142,10 +154,9 @@ const responder = computed(() => (q.value.responderId ? comps.value.get(q.value.
             {{ sp.icon }} {{ sp.title }}
           </button>
         </div>
-        <p v-if="s.settings.jEarlyLockMs > 0 && j.format !== 'khamsa'" class="muted hint">
+        <p v-if="s.settings.jEarlyLockMs > 0" class="muted hint">
           Раннее нажатие блокирует кнопку игрока на {{ (s.settings.jEarlyLockMs / 1000).toFixed(1) }} с.
         </p>
-        <p v-else-if="j.format === 'khamsa'" class="muted hint">Нажатие до того, как вы откроете кнопки, — фальстарт.</p>
       </template>
 
       <template v-else-if="q.step === 'buzzing'">

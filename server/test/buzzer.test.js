@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { effectivePressTime, collectWindow, rankPresses, median, syncStartDelay, FAIRNESS_ONLINE } from '../game/buzzer.js'
+import { effectivePressTime, greenTime, collectWindow, rankPresses, median, syncStartDelay, FAIRNESS_ONLINE } from '../game/buzzer.js'
 
 test('заявленное время используется, если оно правдоподобно', () => {
   assert.equal(effectivePressTime({ claimed: 950, arrival: 1000, rtt: 100 }), 950)
@@ -38,6 +38,23 @@ test('сортировка нажатий: по честному времени,
     { id: 'c', t: 10, arrival: 40 },
   ])
   assert.deepEqual(r.map((x) => x.id), ['b', 'c', 'a'])
+})
+
+test('момент, когда кнопка загорелась: не раньше открытия и не позже задержки связи и отрисовки', () => {
+  assert.equal(greenTime({ go: 1030, openedAt: 1000, rtt: 20 }), 1030)
+  assert.equal(greenTime({ go: 990, openedAt: 1000, rtt: 20 }), 1000, 'раньше открытия кнопок загореться не могла')
+  // rtt 20 + запас 30 + отрисовка 50 = не позже 100 мс после открытия
+  assert.equal(greenTime({ go: 1500, openedAt: 1000, rtt: 20 }), 1100)
+  assert.equal(greenTime({ go: null, openedAt: 1000, rtt: 20 }), 1000, 'телефон не сообщил — считаем от открытия')
+  assert.equal(greenTime({ go: 1030, openedAt: null, rtt: 20 }), null)
+})
+
+test('сортировка нажатий по скорости: от момента, когда кнопка загорелась у игрока', () => {
+  const r = rankPresses([
+    { id: 'fast-wifi', t: 310, start: 10, arrival: 320 },
+    { id: 'slow-wifi', t: 340, start: 90, arrival: 400 },
+  ])
+  assert.deepEqual(r.map((x) => x.id), ['slow-wifi', 'fast-wifi'], 'нажал позже, но среагировал быстрее')
 })
 
 test('медиана', () => {

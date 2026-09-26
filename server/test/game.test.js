@@ -35,18 +35,49 @@ test('имя должно быть уникальным, но можно вер�
 test('«Своя игра» начинается без пакета: раунды и темы строятся из настроек', () => {
   const { game } = makeGame()
   game.hostCommand('game.start')
-  const view = game.buildViews().pub.jeopardy
-  assert.equal(view.format, 'sport')
+  let view = game.buildViews().pub.jeopardy
+  assert.equal(view.format, 'sport', 'по умолчанию — спортивная, личный зачёт')
   assert.deepEqual(
     view.rounds.map((r) => r.name),
-    ['Открытый раунд', 'Полуоткрытый раунд', 'Закрытый раунд', 'Командирский раунд'],
+    ['Бой'],
   )
-  assert.equal(view.board.length, 4, 'по умолчанию 4 темы')
+  assert.equal(view.board.length, 10, 'спортивная игра — 10 тем')
   assert.deepEqual(
     view.board[0].questions.map((q) => q.price),
     [10, 20, 30, 40, 50],
   )
   assert.equal(view.board[2].name, 'Тема 3')
+  assert.equal(view.kind, null, 'видов раундов в спортивной игре нет')
+
+  // «Эрудит-квартет» — ровно четыре раунда, четвёртый — личный.
+  game.hostCommand('settings.update', { patch: { jFormat: 'eq' } })
+  view = game.buildViews().pub.jeopardy
+  assert.deepEqual(
+    view.rounds.map((r) => [r.name, r.kind]),
+    [
+      ['Открытый раунд', 'open'],
+      ['Полуоткрытый раунд', 'semi'],
+      ['Закрытый раунд', 'closed'],
+      ['Личный раунд', 'personal'],
+    ],
+  )
+  assert.equal(view.board.length, 4, 'в раунде «Эрудит-квартета» 4 темы')
+})
+
+test('формат «Своей игры» задаёт зачёт: спортивная — личный, «Эрудит-квартет» — командный', () => {
+  const { game } = makeGame()
+  assert.equal(game.settings.teamMode, false)
+  game.hostCommand('settings.update', { patch: { jFormat: 'eq' } })
+  assert.equal(game.settings.teamMode, true)
+  game.hostCommand('settings.update', { patch: { jFormat: 'tv' } })
+  assert.equal(game.settings.teamMode, true, 'телевизионные правила зачёт не меняют')
+  game.hostCommand('settings.update', { patch: { jFormat: 'sport' } })
+  assert.equal(game.settings.teamMode, false)
+  // В другом режиме формат «Своей игры» командную игру не трогает.
+  game.hostCommand('mode.set', { mode: 'brainring' })
+  game.hostCommand('settings.update', { patch: { teamMode: true } })
+  game.hostCommand('settings.update', { patch: { jFormat: 'sport' } })
+  assert.equal(game.settings.teamMode, true)
 })
 
 test('ведущий вписывает названия тем, пустое название возвращает «Тема N»', () => {
@@ -139,6 +170,49 @@ test('обычный вопрос: блокировка за раннее наж
   assert.equal(j.stage, 'board')
   assert.ok(j.played.includes('0:0:0'))
   assert.throws(() => game.hostCommand('j.select', { id: '0:0:0' }), /сыгран/)
+})
+
+test('скорость нажатия считается от момента, когда кнопка загорелась на телефоне игрока', async () => {
+  const { game, time, players } = await startJeopardy(['Аня', 'Боря', 'Вика'])
+  const [a, b, c] = players
+  for (let i = 0; i < 3; i++) game.updatePing(b.id, 100) // у Бори медленный Wi-Fi
+  game.hostCommand('j.select', { id: '0:0:0' })
+  game.hostCommand('j.arm')
+  const opened = game.state.buzzer.armedAt
+  // У Ани кнопка загорелась через 10 мс после команды ведущего, у Бори — через 90 мс: сигнал шёл дольше.
+  time.advance(310)
+  assert.equal(game.buzz(a.id, opened + 310, time.now(), opened + 10).result, 'pressed') // реакция 300
+  time.advance(30)
+  assert.equal(game.buzz(b.id, opened + 340, time.now(), opened + 90).result, 'pressed') // реакция 250
+  time.advance(400)
+  assert.equal(game.state.buzzer.winner.competitorId, b.id, 'Боря среагировал быстрее, хотя нажал позже')
+  assert.equal(game.state.buzzer.winner.reaction, 250)
+  assert.deepEqual(
+    game.buildViews().host.buzzer.ranking.map((r) => [r.playerId, r.reaction, r.delta]),
+    [
+      [b.id, 250, 0],
+      [a.id, 300, 50],
+    ],
+  )
+  assert.equal(game.buildViews().me(b.id).reaction, 250)
+
+  // Больше, чем позволяет задержка связи, приписать себе нельзя: у Вики пинг 20 мс — кнопка загорелась
+  // не позже чем через 20 + 30 + 50 = 100 мс после открытия.
+  game.hostCommand('j.judge', { correct: false })
+  const reopened = game.state.buzzer.armedAt
+  time.advance(600)
+  assert.equal(game.buzz(c.id, reopened + 600, time.now(), reopened + 550).result, 'pressed')
+  time.advance(300)
+  assert.equal(game.state.buzzer.winner.reaction, 500)
+  game.hostCommand('j.judge', { correct: true })
+  game.hostCommand('j.close')
+
+  // Нажал раньше, чем кнопка загорелась на его телефоне, — это раннее нажатие.
+  game.hostCommand('j.select', { id: '0:0:1' })
+  game.hostCommand('j.arm')
+  const again = game.state.buzzer.armedAt
+  time.advance(20)
+  assert.equal(game.buzz(a.id, again + 20, time.now(), again + 40).result, 'early')
 })
 
 test('время на нажатие вышло — показывается ответ', async () => {
@@ -253,8 +327,10 @@ test('финал: ставки, ответы с телефонов и подсч
   assert.equal(j.final.step, 'bets', 'тема финала одна — сразу ставки')
   assert.equal(game.buildViews().pub.jeopardy.final.themeName, 'Финал')
 
+  assert.equal(game.state.timers.bets.total, 30_000, 'на ставку — 30 секунд')
   assert.throws(() => game.playerAction(a.id, 'finalBet', { amount: 600 }), /от 1 до 500/)
   game.playerAction(a.id, 'finalBet', { amount: 400 })
+  assert.throws(() => game.playerAction(a.id, 'finalBet', { amount: 100 }), /изменить её нельзя/)
   assert.throws(() => game.playerAction(c.id, 'finalBet', { amount: 1 }), /не участвуете/)
   game.hostCommand('j.final.bet', { competitorId: b.id, amount: 300 })
 
@@ -292,7 +368,7 @@ test('новый раунд начинает игрок с наименьшим 
 
 test('командный режим: кнопка любого участника — за команду', async () => {
   const { game, time } = makeGame()
-  game.hostCommand('settings.update', { patch: { teamMode: true } })
+  game.hostCommand('settings.update', { patch: { teamMode: true, brOneButton: false } })
   const red = game.createTeam('Красные')
   const blue = game.createTeam('Синие')
   const r1 = game.join({ name: 'Р1', teamId: red.id })
@@ -449,6 +525,56 @@ test('«Брейн-ринг»: ничья — дополнительный во�
   assert.equal(game.score(B.id), 3.5)
 })
 
+test('«Брейн-ринг»: одна кнопка на команду — у капитана или у того, кому её отдал ведущий', async () => {
+  const { game, time, teams, players } = teamsGame(['Альфа', 'Бета'])
+  const [A] = teams
+  const [pa] = players
+  const second = game.join({ name: 'Второй', teamId: A.id })
+  game.attach(second.id)
+  game.updatePing(second.id, 20)
+  const me = (p) => game.buildViews().me(p.id).brainring
+  assert.equal(me(pa).isButton, true, 'кнопка — у капитана')
+  assert.equal(me(second).isButton, false)
+  assert.equal(me(second).button.playerId, pa.id)
+  assert.equal(game.buildViews().pub.teams.find((t) => t.id === A.id).buttonId, pa.id)
+  game.hostCommand('br.next')
+  game.hostCommand('br.start')
+  time.advance(1000)
+  assert.equal(game.buzz(second.id, time.now()).result, 'notButton')
+  // Ведущий отдаёт кнопку другому игроку команды.
+  game.hostCommand('team.button', { teamId: A.id, playerId: second.id })
+  assert.equal(game.buzz(pa.id, time.now()).result, 'notButton')
+  assert.equal(game.buzz(second.id, time.now()).result, 'pressed')
+  time.advance(300)
+  assert.equal(game.state.buzzer.winner.playerId, second.id)
+  // Кто держит кнопку, сохраняется при перезапуске.
+  const { game: g2 } = makeGame()
+  await g2.restore(JSON.parse(JSON.stringify(game.serialize())))
+  assert.equal(g2.buttonHolder(A.id), second.id)
+  // Кнопку можно вернуть всем игрокам команды.
+  game.hostCommand('settings.update', { patch: { brOneButton: false } })
+  assert.equal(me(pa).isButton, null)
+  assert.equal(game.buildViews().pub.teams.find((t) => t.id === A.id).buttonId, null)
+})
+
+test('«Брейн-ринг»: за взятый вопрос в турнирную таблицу — дробные очки (например, 0,5)', () => {
+  const { game, time, teams, players } = teamsGame(['Альфа', 'Бета'])
+  const [A, B] = teams
+  const [pa, pb] = players
+  game.hostCommand('settings.update', { patch: { brTakenPoints: '0,5' } })
+  assert.equal(game.settings.brTakenPoints, 0.5)
+  brAnswer(game, time, pa)
+  brAnswer(game, time, pb)
+  brAnswer(game, time, pa)
+  brBurn(game)
+  brAnswer(game, time, pa) // 3:1 — победа Альфы
+  assert.deepEqual(game.state.brainring.battles[0].scores, { [A.id]: 3, [B.id]: 1 }, 'в бою считаются взятые вопросы')
+  assert.equal(game.score(A.id), 2.5, '3 × 0,5 + 1 за победу')
+  assert.equal(game.score(B.id), 0.5)
+  const row = game.buildViews().pub.brainring.standings.find((r) => r.competitorId === A.id)
+  assert.deepEqual({ taken: row.taken, total: row.total }, { taken: 3, total: 2.5 })
+})
+
 test('«Брейн-ринг»: в бою играют только выбранные команды, следующая пара — кто ещё не встречался', () => {
   const { game, time, teams, players } = teamsGame(['Альфа', 'Бета', 'Гамма'])
   const [A, B, C] = teams
@@ -564,6 +690,8 @@ test('представление игрока содержит его место
   assert.equal(meA.isWinner, true)
   assert.equal(meB.rank, 2)
   assert.equal(meB.delta, 10)
+  assert.equal(meA.reaction, 400, 'время реакции от открытия кнопок')
+  assert.equal(meA.reactionTest, null, 'тест реакции — отдельный режим')
 })
 
 test('удалённый игрок пропадает, его счёт тоже', () => {
@@ -673,7 +801,8 @@ test('закрытый вход: новые игроки не входят, но
 // ───────────── Спортивная «Своя игра» (правила «Эрудит-квартета») ─────────────
 
 // Спортивный формат с двумя темами в раунде (по 5 вопросов, 4 раунда).
-const SPORT = { jFormat: 'sport', jThemes: 2 }
+const SPORT = { jFormat: 'sport', jSportThemes: 2 }
+const EQ = { jFormat: 'eq', jEqThemes: 2 }
 
 // Правильный/неправильный ответ игрока на открытый вопрос.
 function jAnswer(game, time, player, correct) {
@@ -684,20 +813,20 @@ function jAnswer(game, time, player, correct) {
   game.hostCommand('j.judge', { correct })
 }
 
-test('спортивная «Своя игра»: темы по 5 вопросов подряд, 10–50 очков, минус за ошибку', async () => {
+test('спортивная «Своя игра»: личный зачёт, темы по 5 вопросов подряд, 10–50 очков, минус за ошибку', async () => {
   const { game, time } = makeGame({ settings: SPORT })
   const [a, b] = addPlayers(game, ['Аня', 'Боря'])
   game.hostCommand('game.start')
   const j = () => game.state.jeopardy
-  assert.equal(j().stage, 'board', 'без команд распределять игроков не нужно')
-  let view = game.buildViews().pub.jeopardy
+  assert.equal(j().stage, 'board', 'распределять игроков не нужно')
+  const view = game.buildViews().pub.jeopardy
   assert.equal(view.format, 'sport')
-  assert.equal(view.kind, 'open')
+  assert.equal(view.kind, null)
   assert.deepEqual(
     view.board[0].questions.map((q) => q.price),
     [10, 20, 30, 40, 50],
   )
-  assert.equal(view.rounds.length, 4, 'финала со ставками в спортивном формате нет')
+  assert.equal(view.rounds.length, 1, 'один бой, финала со ставками нет')
 
   game.hostCommand('j.next') // тема 1
   assert.equal(j().stage, 'theme')
@@ -718,30 +847,29 @@ test('спортивная «Своя игра»: темы по 5 вопросо
   }
   game.hostCommand('j.next') // тема сыграна — обзор тем
   assert.equal(j().stage, 'board')
+  // Без штрафа за ошибку и стоимость 1–5.
+  game.hostCommand('settings.update', { patch: { jWrongPenalty: false, jPrices: 'x1' } })
   game.hostCommand('j.next')
   assert.equal(j().themeIndex, 1)
-  for (let i = 0; i < 5; i++) {
+  game.hostCommand('j.next')
+  assert.equal(j().q.price, 1)
+  jAnswer(game, time, b, false)
+  assert.equal(game.score(b.id), 10)
+  game.hostCommand('j.reveal')
+  for (let i = 0; i < 4; i++) {
     game.hostCommand('j.next')
     game.hostCommand('j.reveal')
   }
   game.hostCommand('j.next')
   assert.equal(j().stage, 'roundEnd')
   game.hostCommand('j.next')
-  assert.equal(j().roundIndex, 1)
-  assert.equal(game.buildViews().pub.jeopardy.kind, 'semi')
-  // Без штрафа за ошибку
-  game.hostCommand('settings.update', { patch: { jWrongPenalty: false, jPrices: 'x1' } })
-  game.hostCommand('j.next')
-  game.hostCommand('j.next')
-  assert.equal(j().q.price, 1)
-  jAnswer(game, time, b, false)
-  assert.equal(game.score(b.id), 10)
+  assert.equal(j().stage, 'results', 'после боя — итоги')
 })
 
-function sportTeams() {
-  const ctx = makeGame({ settings: SPORT })
+function eqTeams() {
+  const ctx = makeGame({ settings: EQ })
   const { game } = ctx
-  game.hostCommand('settings.update', { patch: { teamMode: true } })
+  assert.equal(game.settings.teamMode, true, '«Эрудит-квартет» — командная игра')
   const red = game.createTeam('Красные')
   const blue = game.createTeam('Синие')
   const join = (name, team) => {
@@ -757,8 +885,8 @@ function sportTeams() {
   return { ...ctx, red, blue, r1, r2, b1, b2 }
 }
 
-test('спортивная «Своя игра» в командах: капитаны распределяют игроков, за столом один игрок от команды', async () => {
-  const { game, time, red, blue, r1, r2, b1, b2 } = sportTeams()
+test('«Эрудит-квартет»: капитаны распределяют игроков, за столом один игрок от команды', async () => {
+  const { game, time, red, blue, r1, r2, b1, b2 } = eqTeams()
   assert.equal(game.captainOf(red.id), r1.id, 'первый вошедший — капитан')
   game.hostCommand('game.start')
   const j = () => game.state.jeopardy
@@ -811,8 +939,8 @@ test('спортивная «Своя игра» в командах: капит
   assert.equal(game.buzz(r2.id, time.now()).result, 'pressed')
 })
 
-test('виды раундов: полуоткрытый — выбор перед темой, закрытый — темы скрыты, командирский — капитаны', async () => {
-  const { game, time, red, blue, r1, r2, b1 } = sportTeams()
+test('раунды «Эрудит-квартета»: полуоткрытый — выбор перед темой, закрытый — темы скрыты, личный — один игрок', async () => {
+  const { game, time, red, blue, r1, r2, b1, b2 } = eqTeams()
   game.hostCommand('game.start')
   const j = () => game.state.jeopardy
   game.hostCommand('j.assign.done')
@@ -847,25 +975,56 @@ test('виды раундов: полуоткрытый — выбор пере�
   assert.equal(game.buildViews().host.jeopardy.phase.themes[0].name, 'Живопись', 'ведущий видит темы')
   assert.equal(game.buildViews().me(r1.id).jeopardy.captain.themes[0].name, null, 'капитаны — нет')
 
-  // Четвёртый — командирский: играют капитаны, выбирать никого не нужно.
+  // Четвёртый — личный: капитан выбирает одного игрока, он играет все темы раунда.
   game.hostCommand('j.round', { index: 3 })
-  assert.equal(game.buildViews().pub.jeopardy.kind, 'captain')
-  assert.equal(j().stage, 'board')
+  assert.equal(game.buildViews().pub.jeopardy.kind, 'personal')
+  assert.equal(j().stage, 'assign')
+  assert.equal(j().phase.scope, 'leader')
+  const leaderCap = game.buildViews().me(r1.id).jeopardy.captain
+  assert.deepEqual(leaderCap.themes, [{ index: -1, name: 'Кто играет личный раунд' }])
+  assert.deepEqual(game.buildViews().pub.jeopardy.leaders, {}, 'пока капитаны выбирают, выбор скрыт')
+  game.playerAction(r1.id, 'assign', { themeIndex: -1, playerId: r2.id })
+  game.playerAction(r1.id, 'assignReady')
+  game.playerAction(b1.id, 'assignReady')
+  assert.equal(j().stage, 'board', 'темы личного раунда — по порядку')
+  assert.equal(game.buildViews().pub.jeopardy.leaders[red.id].playerId, r2.id)
+  assert.equal(game.buildViews().pub.jeopardy.leaders[blue.id].playerId, b1.id, 'не выбрали — играет капитан')
+  const me = game.buildViews().me(r2.id).jeopardy
+  assert.equal(me.isLeader, true)
+  assert.deepEqual(
+    me.myThemes.map((t) => t.index),
+    [0, 1],
+    'выбранный игрок играет все темы раунда',
+  )
+  for (const ti of [0, 1]) {
+    game.hostCommand('j.next') // тема
+    game.hostCommand('j.next') // первый вопрос темы
+    assert.equal(j().themeIndex, ti)
+    game.hostCommand('j.arm')
+    time.advance(100)
+    assert.equal(game.buzz(r1.id, time.now()).result, 'notAtTable')
+    assert.equal(game.buzz(b2.id, time.now()).result, 'notAtTable')
+    assert.equal(game.buzz(r2.id, time.now()).result, 'pressed')
+    time.advance(300)
+    game.hostCommand('j.judge', { correct: true })
+    for (let i = 0; i < 4; i++) {
+      game.hostCommand('j.next')
+      game.hostCommand('j.reveal')
+    }
+    game.hostCommand('j.next')
+  }
+  assert.equal(j().stage, 'roundEnd')
   game.hostCommand('j.next')
-  game.hostCommand('j.next')
-  game.hostCommand('j.arm')
-  time.advance(100)
-  assert.equal(game.buzz(r2.id, time.now()).result, 'notAtTable')
-  assert.equal(game.buzz(r1.id, time.now()).result, 'pressed')
-  void blue
+  assert.equal(j().stage, 'results', 'после четвёртого раунда — итоги')
 
-  // Ведущий меняет вид раунда, пока раунд не начался.
-  game.hostCommand('j.round', { index: 1 })
-  assert.throws(() => game.hostCommand('j.kind', { kind: 'bad' }), /вид/)
+  // Ведущий может заменить игрока личного раунда и заново запустить выбор.
+  game.hostCommand('j.round', { index: 3 })
+  game.hostCommand('j.assign.set', { teamId: blue.id, themeIndex: -1, playerId: b2.id })
+  assert.equal(j().leaders[3][blue.id], b2.id)
 })
 
 test('капитан: назначается автоматически, переходит к другому игроку, выбирается ведущим', () => {
-  const { game, red, r1, r2 } = sportTeams()
+  const { game, red, r1, r2 } = eqTeams()
   assert.equal(game.captainOf(red.id), r1.id)
   game.hostCommand('team.captain', { teamId: red.id, playerId: r2.id })
   assert.equal(game.captainOf(red.id), r2.id)
@@ -874,8 +1033,8 @@ test('капитан: назначается автоматически, пер�
   assert.equal(game.captainOf(red.id), r1.id, 'капитан ушёл — капитаном становится другой игрок')
 })
 
-test('спортивный формат: выбор игроков переживает перезапуск сервера', async () => {
-  const { game, red, r1, r2 } = sportTeams()
+test('«Эрудит-квартет»: выбор игроков переживает перезапуск сервера', async () => {
+  const { game, red, r1, r2 } = eqTeams()
   game.hostCommand('game.start')
   game.playerAction(r1.id, 'assign', { themeIndex: 0, playerId: r2.id })
   const { game: g2 } = makeGame()
@@ -884,4 +1043,21 @@ test('спортивный формат: выбор игроков пережи�
   assert.equal(g2.state.jeopardy.assign[0][red.id][0], r2.id)
   g2.hostCommand('j.assign.done')
   assert.equal(g2.state.jeopardy.stage, 'board')
+})
+
+test('сохранение прошлой версии: спортивная командная игра продолжается как «Эрудит-квартет»', async () => {
+  const { game } = makeGame()
+  const saved = JSON.parse(JSON.stringify(game.serialize()))
+  delete saved.settings.jEqThemes
+  delete saved.settings.jSportThemes
+  Object.assign(saved.settings, { jFormat: 'sport', teamMode: true, jThemes: 3 })
+  const { game: g2 } = makeGame()
+  await g2.restore(saved)
+  assert.equal(g2.settings.jFormat, 'eq')
+  assert.equal(g2.settings.jEqThemes, 3)
+  // Личная спортивная игра остаётся спортивной.
+  Object.assign(saved.settings, { teamMode: false })
+  const { game: g3 } = makeGame()
+  await g3.restore(saved)
+  assert.equal(g3.settings.jFormat, 'sport')
 })

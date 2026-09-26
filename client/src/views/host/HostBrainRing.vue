@@ -18,6 +18,19 @@ const responder = computed(() => (br.value.stage === 'answering' && b.value.winn
 const mainLeft = computed(() => timerLeft(s.value.timers.main, now.value))
 
 const falseStarters = computed(() => b.value.falseStarts.map((id) => nameOf(id)))
+// У команды одна кнопка — у кого она (в личной игре или если выключено — не показываем).
+const BUTTON_OFFLINE = 'Телефон с кнопкой команды не на связи — отдайте кнопку другому игроку (меню «⋯» у игрока)'
+const buttonHolder = (teamId: string) => {
+  const t = s.value.teams.find((x) => x.id === teamId)
+  if (!s.value.settings.teamMode || !t?.buttonId) return null
+  return s.value.players.find((p) => p.id === t.buttonId) ?? null
+}
+const totalHint = computed(() => {
+  const st = s.value.settings
+  if (st.brTotal !== 'sum') return 'очки — только за победы и ничьи, взятые вопросы решают при равенстве'
+  const per = st.brTakenPoints === 1 ? 'взятые вопросы' : `по ${st.brTakenPoints.toLocaleString('ru-RU')} за взятый вопрос`
+  return `очки = ${per} + очки за победы`
+})
 
 async function next() {
   await run('br.next')
@@ -93,7 +106,16 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
         :class="{ lead: (battle.scores[id] ?? 0) > 0 && battle.teams.every((x) => (battle!.scores[x] ?? 0) <= (battle!.scores[id] ?? 0)) }"
         :style="{ '--c': comps.get(id)?.color ?? '#888', '--t': textOn(comps.get(id)?.color ?? '#888') }"
       >
-        <span class="bt-name ellipsis">{{ nameOf(id) }}</span>
+        <span class="bt-name">
+          <span class="ellipsis">{{ nameOf(id) }}</span>
+          <span
+            v-if="buttonHolder(id)"
+            class="bt-button"
+            :title="buttonHolder(id)?.connected ? 'Кнопка команды — у этого игрока' : BUTTON_OFFLINE"
+          >
+            <Icon name="bolt" size="0.8em" /> {{ buttonHolder(id)?.name }}{{ buttonHolder(id)?.connected ? '' : ' — нет связи' }}
+          </span>
+        </span>
         <b class="bt-score nums">{{ battle.scores[id] ?? 0 }}</b>
       </div>
     </div>
@@ -213,9 +235,7 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
     <div class="card table-card">
       <div class="label">
         Турнирная таблица
-        <span class="faint">
-          · {{ s.settings.brTotal === 'sum' ? 'очки = взятые вопросы + очки за победы' : 'очки — только за победы и ничьи' }}
-        </span>
+        <span class="faint">· {{ totalHint }}</span>
       </div>
       <BrStandings
         :standings="br.standings"
@@ -255,6 +275,19 @@ const needsSetup = computed(() => !battle.value && (br.value.stage === 'idle' ||
 }
 .bt-score {
   font-size: 2rem;
+}
+.bt-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.bt-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  opacity: 0.85;
 }
 .tie,
 .battle-end,

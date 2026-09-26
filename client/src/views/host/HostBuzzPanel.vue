@@ -35,6 +35,8 @@ const TIMER_LABEL: Record<string, string> = {
   main: 'время вопроса',
   final: 'финал',
   assign: 'выбор игроков',
+  bets: 'ставки',
+  reaction: 'на нажатие',
 }
 const timers = computed(() =>
   Object.entries(s.value.timers).map(([name, t]) => ({ name, t, left: timerLeft(t, now.value) })),
@@ -85,10 +87,12 @@ const stripText = computed(() => {
         {{ comps.get(r.competitorId)?.name ?? '—' }}
         <span v-if="s.settings.teamMode" class="faint small">({{ playerName(r.playerId) }})</span>
       </span>
-      <span class="nums small" title="Отставание от первого">{{ i === 0 ? '' : `+${r.delta} мс` }}</span>
-      <span v-if="r.reaction != null" class="nums faint small" title="Время реакции">{{ r.reaction }} мс</span>
+      <span class="nums small" title="Насколько медленнее первого">{{ i === 0 ? '' : `+${r.delta} мс` }}</span>
+      <span v-if="r.reaction != null" class="nums faint small" title="Скорость: от момента, когда кнопка загорелась на телефоне, до нажатия">
+        {{ r.reaction }} мс
+      </span>
     </div>
-    <p class="hint faint">Время учитывает задержку Wi-Fi каждого телефона.</p>
+    <p class="hint faint">Скорость — от момента, когда кнопка загорелась на телефоне игрока, до нажатия (с учётом задержки Wi-Fi).</p>
   </div>
 </template>
 

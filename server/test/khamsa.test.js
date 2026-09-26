@@ -1,4 +1,4 @@
-// «Хамса»: пять раундов, растущая стоимость, фальстарт, переход права ответа, вычёркивание тем, раунд со ставками.
+// «Хамса»: пять раундов, растущая стоимость, нет фальстарта, переход права ответа, вычёркивание тем, раунд со ставками.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { makeGame } from './helpers.js'
@@ -30,7 +30,7 @@ async function start(ctx) {
 
 const kh = (game) => game.state.khamsa
 
-test('«Хамса»: раунды явный, полуявный, тайный, четвёртый и «Хамса», стоимость растёт от раунда к раунду', async () => {
+test('«Хамса»: раунды явный, полуявный, тайный, персональный и «Хамса», стоимость растёт от раунда к раунду', async () => {
   const ctx = makeGame()
   const { game } = ctx
   game.hostCommand('mode.set', { mode: 'khamsa' })
@@ -39,11 +39,11 @@ test('«Хамса»: раунды явный, полуявный, тайный,
   assert.equal(view().format, 'khamsa')
   assert.deepEqual(
     view().rounds.map((r) => r.kind),
-    ['open', 'semi', 'closed', 'leaders', 'khamsa'],
+    ['open', 'semi', 'closed', 'personal', 'khamsa'],
   )
   assert.deepEqual(
     view().rounds.map((r) => r.name),
-    ['Явный раунд', 'Полуявный раунд', 'Тайный раунд', 'Четвёртый раунд', 'Хамса'],
+    ['Явный раунд', 'Полуявный раунд', 'Тайный раунд', 'Персональный раунд', 'Хамса'],
   )
   assert.equal(view().board.length, 5, 'в раунде пять тем')
   assert.deepEqual(
@@ -63,7 +63,7 @@ test('«Хамса»: раунды явный, полуявный, тайный,
   assert.equal(game.state.jeopardy.roundIndex, 0)
 })
 
-test('«Хамса»: фальстарт лишает права ответа, на ответ 3 секунды, ошибка — минус', async () => {
+test('«Хамса»: фальстарта нет — перебить ведущего можно с начала вопроса, на ответ 3 секунды, ошибка — минус', async () => {
   const ctx = teamsSetup(2)
   const { game, time, teams } = ctx
   await start(ctx)
@@ -73,16 +73,37 @@ test('«Хамса»: фальстарт лишает права ответа, �
   const [y, r] = teams
   const yTable = kh(game).assign[0][y.team.id][0]
   const rTable = kh(game).assign[0][r.team.id][0]
-  assert.equal(game.buzz(yTable, time.now()).result, 'falseStart', 'нажал, пока вопрос читают')
-  game.hostCommand('j.arm')
+  assert.equal(kh(game).q.step, 'reading')
+  assert.equal(game.state.buzzer.status, 'armed', 'кнопки открыты, пока ведущий читает')
+  assert.equal(game.state.timers.buzz, undefined, 'пока вопрос читают, время не идёт')
   time.advance(100)
+  assert.equal(game.buzz(yTable, time.now()).result, 'pressed', 'нажал, пока вопрос читают, — это не фальстарт')
+  time.advance(300)
+  assert.equal(kh(game).q.step, 'answering')
+  assert.equal(kh(game).q.responderId, y.team.id)
+  assert.equal(game.state.timers.answer.total, 3000)
+  game.hostCommand('j.judge', { correct: false })
+  assert.equal(game.score(y.team.id), -100)
+  // Больше никто не нажимал — ведущий читает дальше, кнопки снова открыты.
+  assert.equal(kh(game).q.step, 'reading')
+  assert.equal(game.state.buzzer.status, 'armed')
   assert.equal(game.buzz(yTable, time.now()).result, 'locked')
+  // Ведущий дочитал — пошло время на обдумывание.
+  game.hostCommand('j.arm')
+  assert.equal(kh(game).q.step, 'buzzing')
+  assert.equal(game.state.timers.buzz.total, 5000, 'на обдумывание — 5 секунд')
+  time.advance(100)
   assert.equal(game.buzz(rTable, time.now()).result, 'pressed')
   time.advance(300)
-  assert.equal(game.state.timers.answer.total, 3000)
   game.hostCommand('j.judge', { correct: false })
   assert.equal(game.score(r.team.id), -100)
   assert.equal(kh(game).q.step, 'reveal', 'отвечать больше некому')
+
+  // Время на обдумывание вышло — вопрос не взят.
+  game.hostCommand('j.next')
+  game.hostCommand('j.arm')
+  time.advance(5100)
+  assert.equal(kh(game).q.step, 'reveal')
 })
 
 test('«Хамса»: после неверного ответа право ответа переходит к следующему нажавшему', async () => {
@@ -124,7 +145,7 @@ test('«Хамса»: после неверного ответа право от
   assert.equal(kh(game).q.step, 'buzzing')
 })
 
-test('«Хамса»: в четвёртом раунде капитаны выбирают игрока, команды по очереди убирают темы', async () => {
+test('«Хамса»: в персональном раунде капитаны выбирают игрока, команды по очереди убирают темы', async () => {
   const ctx = teamsSetup(4)
   const { game, time, teams } = ctx
   await start(ctx)
@@ -151,6 +172,7 @@ test('«Хамса»: в четвёртом раунде капитаны выб
   assert.equal(kh(game).stage, 'theme')
   assert.equal(kh(game).themeIndex, 3, 'осталась одна тема')
   assert.deepEqual(game.buildViews().pub.jeopardy.board.map((t) => t.struck), [true, true, true, false, true])
+  assert.equal(game.buildViews().me(y.members[0].id).jeopardy.captain, null)
   const meJ = (p) => game.buildViews().me(p.id).jeopardy
   assert.equal(meJ(y.members[1]).isLeader, true)
   assert.deepEqual(meJ(y.members[1]).myThemes.map((t) => t.index), [3], 'игрок раунда играет оставшуюся тему')
@@ -159,7 +181,6 @@ test('«Хамса»: в четвёртом раунде капитаны выб
   // Тему играет выбранный игрок, остальные — нет.
   game.hostCommand('j.next')
   assert.equal(kh(game).q.price, 400)
-  game.hostCommand('j.arm')
   time.advance(100)
   assert.equal(game.buzz(y.members[0].id, time.now()).result, 'notAtTable')
   assert.equal(game.buzz(y.members[1].id, time.now()).result, 'pressed')
@@ -170,27 +191,43 @@ test('«Хамса»: в четвёртом раунде капитаны выб
     game.hostCommand('j.reveal')
   }
   game.hostCommand('j.next')
-  assert.equal(kh(game).stage, 'roundEnd', 'в четвёртом раунде играется одна тема')
+  assert.equal(kh(game).stage, 'roundEnd', 'в персональном раунде играется одна тема')
 })
 
 test('«Хамса»: в последнем раунде команды с плюсом ставят очки на один вопрос', async () => {
   const ctx = teamsSetup(3)
-  const { game, teams } = ctx
+  const { game, time, teams } = ctx
   await start(ctx)
   const [y, r, b] = teams
   game.state.scores = { [y.team.id]: 1500, [r.team.id]: -200, [b.team.id]: 700 }
   game.hostCommand('j.round', { index: 4 })
   const f = () => kh(game).final
+  const me = (p) => game.buildViews().me(p.id).jeopardy.final
   assert.equal(kh(game).stage, 'final')
   assert.deepEqual(f().participants, [y.team.id, b.team.id], 'с отрицательным счётом не играют')
   assert.equal(f().step, 'bets')
+  assert.equal(game.state.timers.bets.total, 30_000, 'на ставку — 30 секунд')
+  // Ставку за команду делает капитан — один раз.
+  assert.equal(me(y.members[0]).canBet, true)
+  assert.equal(me(y.members[1]).canBet, false)
+  assert.equal(me(y.members[1]).writer.playerId, y.members[0].id)
+  assert.throws(() => game.playerAction(y.members[1].id, 'finalBet', { amount: 100 }), /капитан/)
   assert.throws(() => game.playerAction(y.members[0].id, 'finalBet', { amount: 1600 }), /от 1 до 1500/)
   game.playerAction(y.members[0].id, 'finalBet', { amount: 1000 })
-  game.playerAction(b.members[1].id, 'finalBet', { amount: 700 })
+  assert.equal(me(y.members[0]).canBet, false)
+  assert.throws(() => game.playerAction(y.members[0].id, 'finalBet', { amount: 500 }), /изменить её нельзя/)
+  // Время на ставку вышло — с телефона ставку не сделать, но ведущий может вписать её сам.
+  time.advance(30_500)
+  assert.equal(game.buildViews().pub.jeopardy.final.betsOpen, false)
+  assert.throws(() => game.playerAction(b.members[0].id, 'finalBet', { amount: 700 }), /Время на ставку вышло/)
+  game.hostCommand('j.final.bet', { competitorId: b.team.id, amount: 700 })
   game.hostCommand('j.final.question')
+  assert.equal(game.state.timers.bets, undefined)
   assert.equal(game.state.timers.final.total, 70_000, 'минута на обсуждение и 10 секунд на ответ')
-  game.playerAction(y.members[1].id, 'finalAnswer', { text: 'Ответ' })
+  assert.throws(() => game.playerAction(y.members[1].id, 'finalAnswer', { text: 'Ответ' }), /капитан/)
+  game.playerAction(y.members[0].id, 'finalAnswer', { text: 'Ответ' })
   game.playerAction(b.members[0].id, 'finalAnswer', { text: 'Не знаем' })
+  assert.equal(me(y.members[1]).answer, 'Ответ', 'команда видит ответ своего капитана')
   game.hostCommand('j.final.close')
   game.hostCommand('j.final.judge', { competitorId: y.team.id, correct: true })
   game.hostCommand('j.final.judge', { competitorId: b.team.id, correct: false })
@@ -218,7 +255,7 @@ test('«Хамса»: вычёркивание тем переживает пе�
   assert.deepEqual(kh(game).strike.removed, [])
 })
 
-test('«Хамса»: ведущий сам ставит игрока четвёртого раунда и может заменить его', async () => {
+test('«Хамса»: ведущий сам ставит игрока персонального раунда и может заменить его', async () => {
   const ctx = teamsSetup(2)
   const { game, teams } = ctx
   await start(ctx)
@@ -230,4 +267,18 @@ test('«Хамса»: ведущий сам ставит игрока четвё
   game.hostCommand('j.assign.start')
   assert.equal(kh(game).stage, 'assign')
   assert.equal(kh(game).leaders[3], undefined, 'выбор начинается заново')
+})
+
+test('«Хамса»: после перезапуска сервера читаемый вопрос снова открыт для нажатий', async () => {
+  const ctx = teamsSetup(2)
+  const { game, time } = ctx
+  await start(ctx)
+  game.hostCommand('j.assign.done')
+  game.hostCommand('j.next')
+  game.hostCommand('j.next')
+  time.advance(100)
+  const { game: g2 } = makeGame()
+  await g2.restore(JSON.parse(JSON.stringify(game.serialize())))
+  assert.equal(g2.state.khamsa.q.step, 'reading')
+  assert.equal(g2.state.buzzer.status, 'armed', 'фальстарта нет — кнопки открыты с начала вопроса')
 })

@@ -18,6 +18,8 @@ const emit = defineEmits<{
   join: [payload: { name: string; teamId: string | null; newTeamName: string; takeover: boolean }]
 }>()
 
+// Поля — через :value и @input, а не v-model: на телефонах v-model ждёт конца набора слова (IME),
+// и кнопка «Войти» не загорается, пока поле не потеряет фокус.
 const name = ref(props.defaultName)
 const teamId = ref<string | null>(null)
 const newTeam = ref('')
@@ -63,13 +65,14 @@ function submit(takeover = false) {
     <label class="field">
       <span>Ваше имя</span>
       <input
-        v-model="name"
+        :value="name"
         class="input big"
         maxlength="24"
         autocomplete="nickname"
         autocapitalize="words"
         enterkeyhint="go"
         placeholder="Например, Аня"
+        @input="name = ($event.target as HTMLInputElement).value"
       />
     </label>
 
@@ -90,10 +93,11 @@ function submit(takeover = false) {
       </div>
       <input
         v-if="allowNewTeam && !teamId"
-        v-model="newTeam"
+        :value="newTeam"
         class="input"
         maxlength="32"
         :placeholder="teams.length ? 'или новая команда' : 'Название команды'"
+        @input="newTeam = ($event.target as HTMLInputElement).value"
       />
       <p v-if="!teams.length && !allowNewTeam" class="muted small">Ведущий ещё не создал команды — подождите.</p>
     </div>

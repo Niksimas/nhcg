@@ -47,7 +47,7 @@ const tableList = computed(() =>
 const theme = computed(() => (props.j.themeIndex != null ? props.j.board?.[props.j.themeIndex] ?? null : null))
 const phase = computed(() => props.j.phase)
 const teamsInPlay = computed(() => props.state.teams.filter((t) => props.state.players.some((p) => p.teamId === t.id)))
-// «Хамса», четвёртый раунд: чья очередь убирать тему и кто играет раунд от каждой команды.
+// «Хамса», персональный раунд: чья очередь убирать тему и кто играет раунд от каждой команды.
 const strike = computed(() => (props.j.stage === 'strike' ? props.j.strike ?? null : null))
 const leaderOf = (teamId: string) => props.j.leaders?.[teamId]?.name ?? ''
 
@@ -75,7 +75,9 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
           <div v-if="j.board" class="slots">
             <div v-for="(t, ti) in j.board" :key="ti" class="slot">{{ t.name ?? `Тема ${ti + 1}` }}</div>
           </div>
-          <div class="muted-label">Потом команды по очереди уберут темы — останется одна</div>
+          <div class="muted-label">
+            {{ j.format === 'khamsa' ? 'Потом команды по очереди уберут темы — останется одна' : 'Он сыграет за команду все темы раунда' }}
+          </div>
         </template>
         <template v-else>
           <div class="assign-sub">Капитаны распределяют игроков по темам</div>
@@ -186,7 +188,9 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
         >
           Отвечает: {{ nameOf(answering) }}
         </div>
-        <div v-else-if="q.step === 'reading'" class="q-state">Слушайте вопрос</div>
+        <div v-else-if="q.step === 'reading'" class="q-state" :class="{ go: j.liveReading }">
+          {{ j.liveReading ? 'Знаете ответ — жмите!' : 'Слушайте вопрос' }}
+        </div>
         <div v-else-if="q.step === 'buzzing'" class="q-state go">Жмите на кнопку!</div>
         <template v-else-if="q.step === 'reveal'">
           <div v-if="rightAttempt" class="right-by" :style="{ '--c': colorOf(rightAttempt.competitorId) }">
@@ -220,7 +224,10 @@ const SPECIAL: Record<string, { title: string; icon: string }> = {
       </div>
       <template v-else>
         <div class="final-theme-name">{{ final.themeName }}</div>
-        <div v-if="final.step === 'bets'" class="final-status">Участники делают ставки</div>
+        <div v-if="final.step === 'bets'" class="final-q">
+          <div class="final-status">{{ final.betsOpen ? 'Участники делают ставки' : 'Время на ставки вышло' }}</div>
+          <TimerBar v-if="state.timers.bets" :timer="state.timers.bets" :now="now" big :warn-at="10000" />
+        </div>
         <div v-else-if="final.step === 'question'" class="final-q">
           <div class="final-status">Слушайте вопрос — ответ пишите на телефоне</div>
           <TimerBar :timer="state.timers.final" :now="now" big :warn-at="10000" />

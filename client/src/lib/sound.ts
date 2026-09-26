@@ -179,7 +179,12 @@ export function soundForEvent(name: string, data: { type?: string; resumed?: boo
     case 'assignStart':
     case 'battleStart':
     case 'strikeStart':
+    case 'reactionStart':
       return 'select'
+    case 'reactionDone':
+      return 'reveal'
+    case 'betsClosed':
+      return 'timeUp'
     case 'theme':
       return 'special'
     case 'battleEnd':

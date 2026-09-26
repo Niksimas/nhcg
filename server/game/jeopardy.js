@@ -1,12 +1,12 @@
-// Режим «Своя игра» в двух форматах.
+// Режим «Своя игра» в трёх форматах.
 //
-// Спортивный (по умолчанию) — по правилам «Эрудит-квартета»: раунд состоит из тем по 5 вопросов
-// (10, 20, 30, 40, 50 очков), вопросы темы идут подряд, за верный ответ очки начисляются, за неверный — снимаются.
-// От каждой команды тему играет один игрок, нажимать кнопку может только он. Виды раундов:
+// Спортивный (по умолчанию) — личный зачёт: один бой из 10 тем по 5 вопросов (10, 20, 30, 40, 50 очков), вопросы темы
+// идут подряд, за верный ответ очки начисляются, за неверный — снимаются.
+// «Эрудит-квартет» — командный: 4 раунда, от каждой команды тему играет один игрок, нажимать кнопку может только он:
 //   открытый     — темы раунда объявлены заранее, капитаны сразу распределяют игроков по темам;
 //   полуоткрытый — тема объявляется перед игрой, капитан за 20 секунд выбирает, кто её играет;
 //   закрытый     — капитаны заранее ставят игроков на темы, не зная их названий;
-//   командирский — тему играют капитаны команд.
+//   личный       — капитан выбирает одного игрока, он играет все темы раунда за команду.
 // Телевизионный — как в передаче: табло тем и цен, спецвопросы (кот в мешке, аукцион, без риска), финал со ставками.
 //
 // Вопросы ведущий читает с листа (например, из документа Word), поэтому программа знает только «скелет» игры:
@@ -17,11 +17,12 @@ import { GameError, cleanText } from './util.js'
 
 const Q_TYPES = ['normal', 'cat', 'auction', 'norisk']
 const TYPE_LABEL = { cat: 'кот в мешке', auction: 'аукцион', norisk: 'вопрос без риска' }
-export const KINDS = ['open', 'semi', 'closed', 'captain']
-export const KIND_LABEL = { open: 'открытый', semi: 'полуоткрытый', closed: 'закрытый', captain: 'командирский' }
-const KIND_ROUND_NAME = { open: 'Открытый раунд', semi: 'Полуоткрытый раунд', closed: 'Закрытый раунд', captain: 'Командирский раунд' }
+// Раунды «Эрудит-квартета» — всегда в этом порядке.
+export const KINDS = ['open', 'semi', 'closed', 'personal']
+const KIND_ROUND_NAME = { open: 'Открытый раунд', semi: 'Полуоткрытый раунд', closed: 'Закрытый раунд', personal: 'Личный раунд' }
 const PRICE_STEP = { x10: 10, x1: 1, x100: 100 }
 const STAGES = ['board', 'assign', 'strike', 'theme', 'question', 'roundEnd', 'final', 'results']
+const PHASE_SCOPES = ['round', 'theme', 'leader']
 
 export class JeopardyMode {
   constructor(game) {
@@ -47,10 +48,9 @@ export class JeopardyMode {
       'j.final.judge': (a) => this.finalJudge(a.competitorId, a.correct === true),
       'j.special': (a) => this.markSpecial(a.type),
       'j.theme.name': (a) => this.renameTheme(Number(a.round), Number(a.theme), a.name),
-      // спортивный формат
+      // спортивный формат и «Эрудит-квартет»
       'j.theme': (a) => this.startTheme(Number(a.index)),
       'j.next': () => this.next(),
-      'j.kind': (a) => this.setKind(a.kind),
       'j.assign.start': () => this.restartAssign(),
       'j.assign.set': (a) => this.hostAssign(a.teamId, Number(a.themeIndex), a.playerId),
       'j.assign.done': () => this.assignDone(),
@@ -65,11 +65,11 @@ export class JeopardyMode {
       stage: 'board',
       q: null,
       final: null,
-      // спортивный формат
+      // спортивный формат и «Эрудит-квартет»
       themeIndex: null, // тема, которая играется сейчас
-      kinds: {}, // вид раунда, выбранный ведущим: номер раунда → open | semi | closed | captain
       assign: {}, // кто играет тему: номер раунда → команда → номер темы → игрок
-      phase: null, // выбор игроков капитанами: { scope: 'round' | 'theme', themes: [...], ready: [командыготовы] }
+      leaders: {}, // игрок личного раунда: номер раунда → команда → игрок
+      phase: null, // выбор игроков капитанами: { scope: 'round' | 'theme' | 'leader', themes: [...], ready: [команды] }
       names: {}, // названия тем, вписанные ведущим: номер раунда → номер темы → название
     }
   }
@@ -92,7 +92,7 @@ export class JeopardyMode {
 
   structureKey() {
     const st = this.settings
-    return JSON.stringify([st.jFormat, st.jRounds, st.jThemes, st.jQuestions, st.jFinal, this.s.kinds, this.s.names])
+    return JSON.stringify([st.jFormat, st.jSportThemes, st.jEqThemes, st.jRounds, st.jThemes, st.jQuestions, st.jFinal, this.s.names])
   }
 
   themeName(ri, ti, fallback) {
@@ -110,22 +110,20 @@ export class JeopardyMode {
 
   buildRounds() {
     const st = this.settings
-    const sport = st.jFormat === 'sport'
+    const themes = (ri, count, priceOf = () => 0) =>
+      Array.from({ length: count }, (_, ti) => this.buildTheme(ri, ti, st.jQuestions, priceOf))
+    // Спортивная игра — один бой из N тем (стоимость вопросов считает priceOf).
+    if (st.jFormat === 'sport') return [{ name: 'Бой', type: 'normal', themes: themes(0, st.jSportThemes) }]
+    // «Эрудит-квартет» — ровно четыре раунда: открытый, полуоткрытый, закрытый и личный.
+    if (st.jFormat === 'eq') {
+      return KINDS.map((kind, ri) => ({ name: KIND_ROUND_NAME[kind], type: 'normal', themes: themes(ri, st.jEqThemes) }))
+    }
     const rounds = []
-    const seen = {}
     for (let ri = 0; ri < st.jRounds; ri++) {
-      let name = `Раунд ${ri + 1}`
-      if (sport) {
-        // В спортивном формате раунд называется по виду: открытый, полуоткрытый, закрытый, командирский.
-        const kind = KINDS.includes(this.s.kinds?.[ri]) ? this.s.kinds[ri] : KINDS[ri % KINDS.length]
-        seen[kind] = (seen[kind] ?? 0) + 1
-        name = seen[kind] > 1 ? `${KIND_ROUND_NAME[kind]} ${seen[kind]}` : KIND_ROUND_NAME[kind]
-      }
-      const themes = Array.from({ length: st.jThemes }, (_, ti) => this.buildTheme(ri, ti, st.jQuestions, (qi) => (qi + 1) * 100 * (ri + 1)))
-      rounds.push({ name, type: 'normal', themes })
+      rounds.push({ name: `Раунд ${ri + 1}`, type: 'normal', themes: themes(ri, st.jThemes, (qi) => (qi + 1) * 100 * (ri + 1)) })
     }
     // Финал со ставками — только в телевизионном формате.
-    if (!sport && st.jFinal) {
+    if (st.jFinal) {
       const ri = rounds.length
       rounds.push({ name: 'Финал', type: 'final', themes: [this.buildTheme(ri, 0, 1, () => 0)] })
       rounds[ri].themes[0].name = this.themeName(ri, 0, 'Финал')
@@ -165,15 +163,18 @@ export class JeopardyMode {
     if (!Number.isInteger(s.roundIndex) || !this.round(s.roundIndex)) s.roundIndex = 0
     s.played = Array.isArray(s.played) ? s.played.filter((id) => this.find(id)) : []
     if (!STAGES.includes(s.stage)) s.stage = 'board'
-    s.kinds = isPlainObject(s.kinds) ? Object.fromEntries(Object.entries(s.kinds).filter(([, k]) => this.kinds().includes(k))) : {}
-    s.assign = isPlainObject(s.assign) ? s.assign : {}
-    for (const [ri, teams] of Object.entries(s.assign)) {
-      if (!isPlainObject(teams)) delete s.assign[ri]
-      else for (const [tid, map] of Object.entries(teams)) if (!isPlainObject(map)) delete teams[tid]
+    // Виды раундов больше не выбираются — их задаёт формат (старые сохранения могли их содержать).
+    delete s.kinds
+    for (const key of ['assign', 'leaders']) {
+      s[key] = isPlainObject(s[key]) ? s[key] : {}
+      for (const [ri, teams] of Object.entries(s[key])) if (!isPlainObject(teams)) delete s[key][ri]
+    }
+    for (const teams of Object.values(s.assign)) {
+      for (const [tid, map] of Object.entries(teams)) if (!isPlainObject(map)) delete teams[tid]
     }
     if (!Number.isInteger(s.themeIndex) || !this.round()?.themes[s.themeIndex]) s.themeIndex = null
     const ph = s.phase
-    if (!isPlainObject(ph) || !['round', 'theme'].includes(ph.scope) || !Array.isArray(ph.themes) || !Array.isArray(ph.ready)) {
+    if (!isPlainObject(ph) || !PHASE_SCOPES.includes(ph.scope) || !Array.isArray(ph.themes) || !Array.isArray(ph.ready)) {
       s.phase = null
     }
     if (s.stage === 'assign' && !s.phase) s.stage = 'board'
@@ -218,16 +219,29 @@ export class JeopardyMode {
     return null
   }
 
-  // ───────────── спортивный формат: общие правила ─────────────
+  // ───────────── форматы ─────────────
 
-  isSport() {
-    return this.settings.jFormat === 'sport'
+  format() {
+    return this.settings.jFormat
   }
 
-  // Финальный раунд со ставками играется только в телевизионном формате.
+  // Темы играются по порядку, вопросы темы — подряд, стоимость 10–50 (всё, кроме телевизионного формата).
+  ordered() {
+    return this.format() !== 'tv'
+  }
+
+  // Раунды разного вида (открытый, полуоткрытый, закрытый, личный) — в «Эрудит-квартете» (и «Хамсе»).
+  hasKinds() {
+    return this.format() === 'eq'
+  }
+
+  // Кнопки открыты с начала вопроса: игрок может перебить ведущего (в «Хамсе»).
+  liveReading() {
+    return false
+  }
+
   playable(ri) {
-    const r = this.round(ri)
-    return !!r && (!this.isSport() || r.type !== 'final')
+    return !!this.round(ri)
   }
 
   playableRounds() {
@@ -236,34 +250,27 @@ export class JeopardyMode {
       .filter((i) => this.playable(i))
   }
 
-  // Виды раундов, которые может выбрать ведущий.
-  kinds() {
-    return KINDS
-  }
-
-  // Вид раунда: выбранный ведущим или по порядку — открытый, полуоткрытый, закрытый, командирский.
+  // Вид раунда «Эрудит-квартета» задан его номером: открытый, полуоткрытый, закрытый, личный.
   kindOf(ri = this.s.roundIndex) {
-    const chosen = this.s.kinds?.[ri]
-    if (KINDS.includes(chosen)) return chosen
-    const pos = Math.max(0, this.playableRounds().indexOf(ri))
-    return KINDS[pos % KINDS.length]
+    if (!this.hasKinds()) return null
+    return KINDS[ri] ?? null
   }
 
   // За столом по одному игроку от команды (иначе нажимать может любой участник команды).
   tablePlay() {
-    return this.isSport() && this.settings.teamMode && this.settings.jTableMode === 'one'
+    return this.hasKinds() && this.settings.teamMode && this.settings.jTableMode === 'one'
   }
 
   priceOf(ri, ti, qi) {
     const q = this.rounds()[ri]?.themes[ti]?.questions[qi]
     if (!q) return 0
-    if (!this.isSport()) return q.price
+    if (!this.ordered()) return q.price
     return (qi + 1) * PRICE_STEP[this.settings.jPrices]
   }
 
-  // Спецвопросы (кот в мешке, аукцион, без риска): в телевизионном формате всегда, в спортивном — если включены.
+  // Спецвопросы (кот в мешке, аукцион, без риска): в телевизионном формате всегда, в остальных — если включены.
   specialsAllowed() {
-    return !this.isSport() || this.settings.jSpecials
+    return !this.ordered() || this.settings.jSpecials
   }
 
   themeQuestionIds(ri, ti) {
@@ -282,9 +289,14 @@ export class JeopardyMode {
 
   // Видят ли игроки и зрители название темы: в полуоткрытом и закрытом раундах — только когда тема началась.
   themeVisible(ri, ti) {
-    if (!this.isSport()) return true
+    if (!this.hasKinds()) return true
     const kind = this.kindOf(ri)
-    return kind === 'open' || kind === 'captain' || this.themeStarted(ri, ti)
+    return kind === 'open' || kind === 'personal' || this.themeStarted(ri, ti)
+  }
+
+  // Играется ли тема в этом раунде (в персональном раунде «Хамсы» — только оставшаяся после вычёркивания).
+  themeInPlay() {
+    return true
   }
 
   nextThemeIndex() {
@@ -311,10 +323,17 @@ export class JeopardyMode {
     return p && p.teamId === teamId ? p.id : null
   }
 
-  // Игрок команды, который играет тему (в командирском раунде — капитан; если никого не выбрали — тоже капитан).
+  // Игрок личного раунда: выбранный капитаном, а если не выбрали — сам капитан.
+  leaderOf(teamId, ri = this.s.roundIndex) {
+    const pid = this.s.leaders?.[ri]?.[teamId]
+    const p = pid ? this.game.player(pid) : null
+    return p && p.teamId === teamId ? p.id : this.game.captainOf(teamId)
+  }
+
+  // Игрок команды, который играет тему (в личном раунде — выбранный на весь раунд; если никого не выбрали — капитан).
   tablePlayer(teamId, ri, ti) {
     if (!this.tablePlay()) return null
-    if (this.kindOf(ri) === 'captain') return this.game.captainOf(teamId)
+    if (this.kindOf(ri) === 'personal') return this.leaderOf(teamId, ri)
     return this.assignedPlayer(teamId, ri, ti) ?? this.game.captainOf(teamId)
   }
 
@@ -328,12 +347,21 @@ export class JeopardyMode {
     const s = this.s
     const ri = s.roundIndex
     if (!this.tablePlay()) throw new GameError('Сейчас тему играет вся команда — выбирать игрока не нужно')
-    if (this.kindOf(ri) === 'captain') throw new GameError('В командирском раунде играют капитаны')
     if (!this.game.team(teamId)) throw new GameError('Команда не найдена')
-    const theme = this.round(ri)?.themes[ti]
-    if (!theme) throw new GameError('Тема не найдена')
     const p = this.game.player(playerId)
     if (!p || p.teamId !== teamId) throw new GameError('Игрок не в этой команде')
+    // Личный раунд: один игрок на весь раунд (номер темы в запросе не нужен).
+    if (this.kindOf(ri) === 'personal') {
+      if (byCaptain) {
+        if (s.stage !== 'assign' || s.phase?.scope !== 'leader') throw new GameError('Сейчас нельзя выбрать игрока')
+        if (s.phase.ready.includes(teamId)) throw new GameError('Выбор уже подтверждён')
+      }
+      const row = s.leaders[ri] ?? (s.leaders[ri] = {})
+      row[teamId] = p.id
+      return
+    }
+    const theme = this.round(ri)?.themes[ti]
+    if (!theme) throw new GameError('Тема не найдена')
     if (byCaptain) {
       if (s.stage !== 'assign' || !s.phase?.themes.includes(ti)) throw new GameError('Сейчас нельзя выбрать игрока на эту тему')
       if (s.phase.ready.includes(teamId)) throw new GameError('Выбор уже подтверждён')
@@ -404,14 +432,44 @@ export class JeopardyMode {
     return true
   }
 
+  // Личный раунд: капитаны выбирают одного игрока на весь раунд (за минуту).
+  startLeaderPhase() {
+    const s = this.s
+    this.game.stopTimers()
+    this.game.setBuzzer('off')
+    s.q = null
+    s.stage = 'assign'
+    s.phase = { scope: 'leader', themes: [], ready: [] }
+    this.game.startTimer('assign', this.settings.jAssignRoundTime)
+    this.game.log(`Раунд «${this.round().name}»: капитаны выбирают игрока`)
+    this.game.emitEvent('assignStart', { scope: 'leader' })
+  }
+
+  // Начало личного раунда: выбор игрока (если его ещё не выбрали), затем темы.
+  enterPersonal() {
+    const s = this.s
+    const picked = Object.keys(s.leaders?.[s.roundIndex] ?? {}).length > 0
+    if (this.tablePlay() && !picked && this.teamsWithPlayers().length) this.startLeaderPhase()
+    else this.afterLeaders()
+  }
+
+  // Игроки личного раунда выбраны: «Эрудит-квартет» играет темы раунда по порядку («Хамса» сначала вычёркивает темы).
+  afterLeaders() {
+    this.s.stage = 'board'
+  }
+
   finishAssign() {
     const s = this.s
     if (s.stage !== 'assign' || !s.phase) return false
     const { scope, themes } = s.phase
-    this.fillAssignments(s.roundIndex, themes)
     this.game.stopTimer('assign')
     s.phase = null
     this.game.emitEvent('assignDone', { scope })
+    if (scope === 'leader') {
+      this.afterLeaders()
+      return true
+    }
+    this.fillAssignments(s.roundIndex, themes)
     if (scope === 'theme') this.enterTheme(themes[0])
     else s.stage = 'board'
     return true
@@ -428,12 +486,12 @@ export class JeopardyMode {
     this.game.emitEvent('theme', { index: ti })
   }
 
-  needSport() {
-    if (!this.isSport()) throw new GameError('Это действие есть только в спортивном формате')
+  needOrdered() {
+    if (!this.ordered()) throw new GameError('В телевизионном формате вопросы выбирают на табло')
   }
 
   startTheme(ti) {
-    this.needSport()
+    this.needOrdered()
     const s = this.s
     const between = ['board', 'theme', 'roundEnd'].includes(s.stage) || (s.stage === 'question' && s.q?.step === 'reveal')
     if (!between) throw new GameError('Сначала закончите текущий вопрос')
@@ -449,7 +507,7 @@ export class JeopardyMode {
 
   // «Дальше»: следующий вопрос темы → обзор тем → следующая тема → следующий раунд.
   next() {
-    this.needSport()
+    this.needOrdered()
     const s = this.s
     const ri = s.roundIndex
     if (s.stage === 'assign') return this.assignDone()
@@ -490,31 +548,18 @@ export class JeopardyMode {
     return this.select(id)
   }
 
-  setKind(kind) {
-    this.needSport()
-    if (!this.kinds().includes(kind)) throw new GameError('Неизвестный вид раунда')
-    const s = this.s
-    const ri = s.roundIndex
-    if (this.kindOf(ri) === kind) return true
-    this.game.pushUndo('Вид раунда')
-    s.kinds = { ...s.kinds, [ri]: kind }
-    this.game.log(`Раунд «${this.round().name}» — ${KIND_LABEL[kind]}`)
-    // Раунд ещё не начался — распределяем игроков заново по правилам нового вида.
-    const started = this.roundQuestionIds(ri).some((id) => s.played.includes(id))
-    if (!started && ['board', 'assign', 'theme'].includes(s.stage)) {
-      delete s.assign[ri]
-      this.enterRound(ri)
-    }
-    return true
-  }
-
   // Ведущий заново запускает выбор игроков (например, после замены в команде).
   restartAssign() {
-    this.needSport()
+    this.needOrdered()
     const s = this.s
     if (!this.tablePlay()) throw new GameError('Выбор игроков нужен только в командной игре «один игрок от команды»')
-    if (this.kindOf() === 'captain') throw new GameError('В командирском раунде играют капитаны')
-    if (!['board', 'theme', 'assign'].includes(s.stage)) throw new GameError('Сначала закончите вопрос')
+    if (!['board', 'theme', 'assign', 'strike'].includes(s.stage)) throw new GameError('Сначала закончите вопрос')
+    if (this.kindOf() === 'personal') {
+      this.game.pushUndo('Выбор игроков')
+      delete s.leaders[s.roundIndex]
+      this.startLeaderPhase()
+      return true
+    }
     this.game.pushUndo('Выбор игроков')
     const scope = this.kindOf() === 'semi' ? 'theme' : 'round'
     const ti = s.themeIndex ?? this.nextThemeIndex()
@@ -523,16 +568,18 @@ export class JeopardyMode {
   }
 
   hostAssign(teamId, ti, playerId) {
-    this.needSport()
-    this.game.pushUndo('Смена игрока за столом')
+    this.needOrdered()
+    const personal = this.kindOf() === 'personal'
+    this.game.pushUndo(personal ? 'Игрок личного раунда' : 'Смена игрока за столом')
     this.setAssignment(teamId, ti, playerId, false)
     const p = this.game.player(playerId)
-    this.game.log(`${this.game.competitorName(teamId)}: тему «${this.round().themes[ti].name}» играет ${p.name}`)
+    const what = personal ? `раунд «${this.round().name}»` : `тему «${this.round().themes[ti].name}»`
+    this.game.log(`${this.game.competitorName(teamId)}: ${what} играет ${p.name}`)
     return true
   }
 
   assignDone() {
-    this.needSport()
+    this.needOrdered()
     if (this.s.stage !== 'assign') throw new GameError('Сейчас игроков не выбирают')
     this.game.pushUndo('Выбор игроков завершён')
     return this.finishAssign()
@@ -593,25 +640,24 @@ export class JeopardyMode {
     s.phase = null
     this.game.stopTimers()
     this.game.setBuzzer('off')
-    if (this.isSport()) {
-      s.final = null
-      if (this.roundComplete(index)) {
-        s.stage = 'roundEnd'
-        return
-      }
-      s.stage = 'board'
-      // Открытый и закрытый раунды начинаются с распределения игроков по темам.
-      const kind = this.kindOf(index)
-      if (this.tablePlay() && (kind === 'open' || kind === 'closed') && !this.roundHasAssignments(index)) {
-        this.startAssign('round')
-      }
-      return
-    }
     if (r.type === 'final') {
       this.startFinal()
-    } else {
-      s.final = null
-      s.stage = this.roundComplete(index) ? 'roundEnd' : 'board'
+      return
+    }
+    s.final = null
+    if (this.roundComplete(index)) {
+      s.stage = 'roundEnd'
+      return
+    }
+    s.stage = 'board'
+    const kind = this.kindOf(index)
+    if (kind === 'personal') {
+      this.enterPersonal()
+      return
+    }
+    // Открытый и закрытый раунды начинаются с распределения игроков по темам.
+    if (this.tablePlay() && (kind === 'open' || kind === 'closed') && !this.roundHasAssignments(index)) {
+      this.startAssign('round')
     }
   }
 
@@ -619,8 +665,8 @@ export class JeopardyMode {
 
   select(id, force = false) {
     const s = this.s
-    const sport = this.isSport()
-    const canNow = sport
+    const ordered = this.ordered()
+    const canNow = ordered
       ? ['board', 'theme'].includes(s.stage) || (s.stage === 'question' && s.q?.step === 'reveal')
       : s.stage === 'board'
     if (!canNow && !(force && s.stage === 'roundEnd')) throw new GameError('Сейчас нельзя выбрать вопрос')
@@ -629,12 +675,15 @@ export class JeopardyMode {
     if (s.played.includes(id) && !force) throw new GameError('Этот вопрос уже сыгран')
     this.game.pushUndo('Выбор вопроса')
     if (!s.played.includes(id)) s.played.push(id)
-    if (sport) s.themeIndex = f.ti
+    if (ordered) s.themeIndex = f.ti
     const base = this.priceOf(f.ri, f.ti, f.qi)
     s.stage = 'question'
-    s.q = { id, type: 'normal', basePrice: base, price: base, step: 'reading', responderId: null, attempts: [] }
+    // read — ведущий дочитал вопрос (нужно, когда кнопки открыты с начала вопроса).
+    s.q = { id, type: 'normal', basePrice: base, price: base, step: 'reading', responderId: null, attempts: [], read: false }
     this.game.stopTimers()
     this.game.openBuzzer()
+    // Фальстарта нет: кнопки открыты сразу — игрок может перебить ведущего.
+    if (this.liveReading()) this.game.armBuzzer()
     this.game.log(`Вопрос: «${f.theme.name}» за ${base}`)
     this.game.emitEvent('questionSelected', { id, type: 'normal' })
     return true
@@ -690,7 +739,11 @@ export class JeopardyMode {
     if (s.stage !== 'question' || !q || q.step !== 'reading') throw new GameError('Сейчас нельзя принимать ответы')
     this.game.pushUndo('Приём ответов')
     q.step = 'buzzing'
-    const at = this.game.armBuzzer()
+    q.read = true
+    // Кнопки уже открыты с начала вопроса — ведущий дочитал, пошло время на обдумывание.
+    const b = this.game.state.buzzer
+    const live = this.liveReading() && ['armed', 'collecting'].includes(b.status)
+    const at = live ? Math.max(this.game.now(), b.armedAt ?? 0) : this.game.armBuzzer()
     this.game.startTimer('buzz', this.settings.jBuzzTime, at)
     this.game.emitEvent('armed', { at })
     return true
@@ -698,7 +751,8 @@ export class JeopardyMode {
 
   onBuzzWinner(cid) {
     const q = this.s.q
-    if (this.s.stage !== 'question' || !q || q.step !== 'buzzing') return
+    if (this.s.stage !== 'question' || !q) return
+    if (q.step !== 'buzzing' && !(q.step === 'reading' && this.liveReading())) return
     q.step = 'answering'
     q.responderId = cid
     this.game.stopTimer('buzz')
@@ -784,11 +838,10 @@ export class JeopardyMode {
 
   goRound(index) {
     if (!Number.isInteger(index) || !this.round(index)) throw new GameError('Нет такого раунда')
-    if (!this.playable(index)) throw new GameError('Финальный раунд со ставками есть только в телевизионном формате')
     this.game.pushUndo('Смена раунда')
     const prev = this.s.roundIndex
     this.enterRound(index)
-    if (!this.isSport() && index !== prev && this.round(index).type !== 'final' && this.settings.jNewRoundChooser === 'lowest') {
+    if (!this.ordered() && index !== prev && this.round(index).type !== 'final' && this.settings.jNewRoundChooser === 'lowest') {
       const low = this.lowestCompetitor()
       if (low) this.s.chooserId = low
     }
@@ -853,6 +906,21 @@ export class JeopardyMode {
       shown: [],
       current: null,
     }
+    if (s.final.step === 'bets') this.startBets()
+  }
+
+  // Время на ставки (0 — без ограничения). Когда оно вышло, с телефонов ставки больше не принимаются.
+  startBets() {
+    this.game.startTimer('bets', this.settings.jBetTime)
+  }
+
+  betsOpen() {
+    return !this.game.state.timers.bets || this.game.timerRemaining('bets') > 0
+  }
+
+  // Ставку и ответ за команду сдаёт капитан (в личной игре — сам игрок).
+  writerOf(cid) {
+    return this.game.settings.teamMode ? this.game.captainOf(cid) : cid
   }
 
   needFinal(steps) {
@@ -879,6 +947,7 @@ export class JeopardyMode {
     if (left.length === 1) {
       f.themeIndex = left[0].index
       f.step = 'bets'
+      this.startBets()
       this.game.log(`Тема финала: ${left[0].name}`)
       this.game.emitEvent('finalTheme')
     }
@@ -921,6 +990,7 @@ export class JeopardyMode {
     if (!this.finalTheme()) throw new GameError('Не выбрана тема финала')
     this.game.pushUndo('Вопрос финала')
     f.step = 'question'
+    this.game.stopTimer('bets')
     this.game.startTimer('final', this.settings.jFinalTime)
     this.game.log('Финал: вопрос показан')
     this.game.emitEvent('finalQuestion')
@@ -993,13 +1063,19 @@ export class JeopardyMode {
       case 'finalBet': {
         const f = this.needFinal('bets')
         if (!f.participants.includes(cid)) throw new GameError('Вы не участвуете в финале')
+        if (this.writerOf(cid) !== playerId) throw new GameError('Ставку за команду делает капитан')
+        // Ставка окончательная: изменить её может только ведущий.
+        if (cid in f.bets) throw new GameError('Ставка уже сделана — изменить её нельзя')
+        if (!this.betsOpen()) throw new GameError('Время на ставку вышло')
         this.applyBet(cid, a.amount)
+        this.game.log(`Ставка сделана: ${this.game.competitorName(cid)}`)
         this.game.emitEvent('finalBet', { competitorId: cid })
         return true
       }
       case 'finalAnswer': {
         const f = this.needFinal('question')
         if (!f.participants.includes(cid)) throw new GameError('Вы не участвуете в финале')
+        if (this.writerOf(cid) !== playerId) throw new GameError('Ответ за команду пишет капитан')
         f.answers[cid] = cleanText(a.text, 300)
         this.game.emitEvent('finalAnswer', { competitorId: cid })
         return true
@@ -1028,6 +1104,9 @@ export class JeopardyMode {
       this.toReveal()
     } else if (name === 'answer') {
       this.game.emitEvent('answerTimeUp')
+    } else if (name === 'bets' && s.stage === 'final' && s.final?.step === 'bets') {
+      this.game.log('Время на ставки вышло')
+      this.game.emitEvent('betsClosed')
     } else if (name === 'final' && s.stage === 'final' && s.final?.step === 'question') {
       s.final.step = 'reveal'
       this.game.emitEvent('timeUp')
@@ -1043,23 +1122,25 @@ export class JeopardyMode {
     if (!rounds.length) return null
     const r = this.round()
     const ri = s.roundIndex
-    const sport = this.isSport()
+    const ordered = this.ordered()
     return {
-      format: sport ? 'sport' : 'tv',
+      format: this.format(),
       stage: s.stage,
       roundIndex: ri,
       specials: this.specialsAllowed(),
+      // Кнопки открыты с начала вопроса (фальстарта нет).
+      liveReading: this.liveReading(),
       rounds: rounds.map((round, i) => ({
         name: round.name,
         type: round.type,
         complete: round.type === 'final' ? false : this.roundComplete(i),
         skip: !this.playable(i),
-        kind: sport ? this.kindOf(i) : null,
+        kind: this.kindOf(i),
       })),
       chooserId: s.chooserId,
-      kind: sport ? this.kindOf(ri) : null,
+      kind: this.kindOf(ri),
       tablePlay: this.tablePlay(),
-      themeIndex: sport ? s.themeIndex : null,
+      themeIndex: ordered ? s.themeIndex : null,
       board:
         r && r.type !== 'final'
           ? r.themes.map((t, ti) => {
@@ -1068,7 +1149,7 @@ export class JeopardyMode {
                 name: host || visible ? t.name : null,
                 named: t.named,
                 hidden: !visible,
-                current: sport && ti === s.themeIndex,
+                current: ordered && ti === s.themeIndex,
                 questions: t.questions.map((_, qi) => {
                   const id = `${ri}:${ti}:${qi}`
                   return { id, price: this.priceOf(ri, ti, qi), played: s.played.includes(id) }
@@ -1079,6 +1160,7 @@ export class JeopardyMode {
       phase: this.phaseView(host),
       table: this.tableView(),
       assign: this.assignView(host),
+      leaders: this.leadersView(host),
       question: this.questionView(host),
       final: this.finalView(host),
     }
@@ -1109,6 +1191,17 @@ export class JeopardyMode {
     return out
   }
 
+  // Игроки личного раунда по командам. Пока капитаны выбирают, выбор видит только ведущий.
+  leadersView(host) {
+    const s = this.s
+    const ri = s.roundIndex
+    if (!this.tablePlay() || this.kindOf(ri) !== 'personal') return null
+    if (s.stage === 'assign' && !host) return {}
+    const out = {}
+    for (const t of this.teamsWithPlayers()) out[t.id] = this.playerRef(this.leaderOf(t.id, ri))
+    return out
+  }
+
   // Расстановка игроков по темам раунда. Ведущий видит всё; игроки — после выбора и только по открытым темам.
   assignView(host) {
     const s = this.s
@@ -1116,15 +1209,15 @@ export class JeopardyMode {
     const ri = s.roundIndex
     const r = this.round(ri)
     if (!r) return null
-    const captainRound = this.kindOf(ri) === 'captain'
+    const personal = this.kindOf(ri) === 'personal'
     const hiddenNow = s.stage === 'assign' && s.phase ? s.phase.themes : []
     const out = {}
     for (const t of this.teamsWithPlayers()) {
       const row = {}
       r.themes.forEach((_, ti) => {
         if (!host && (hiddenNow.includes(ti) || !this.themeVisible(ri, ti))) return
-        const pid = captainRound ? this.game.captainOf(t.id) : this.assignedPlayer(t.id, ri, ti)
-        const ref = this.playerRef(pid)
+        if (personal && (!this.themeInPlay(ri, ti) || (!host && s.stage === 'assign'))) return
+        const ref = this.playerRef(personal ? this.leaderOf(t.id, ri) : this.assignedPlayer(t.id, ri, ti))
         if (ref) row[ti] = ref
       })
       out[t.id] = row
@@ -1144,6 +1237,7 @@ export class JeopardyMode {
       number: f.qi + 1,
       type: q.type,
       step: q.step,
+      read: !!q.read,
       basePrice: q.basePrice,
       price: q.price,
       responderId: q.responderId,
@@ -1159,6 +1253,7 @@ export class JeopardyMode {
       step: f.step,
       themes: f.themes,
       themeName: theme?.name ?? null,
+      betsOpen: f.step === 'bets' && this.betsOpen(),
       participants: f.participants.map((cid) => {
         const open = host || f.shown.includes(cid)
         return {
@@ -1179,11 +1274,12 @@ export class JeopardyMode {
     const s = this.s
     const f = s.stage === 'final' ? s.final : null
     const participant = !!(f && cid && f.participants.includes(cid))
-    const sport = this.isSport()
+    const ordered = this.ordered()
+    const writer = participant ? this.writerOf(cid) : null
     return {
-      ...this.sportMe(cid, playerId),
-      isChooser: !sport && !!cid && cid === s.chooserId,
-      canSelect: !sport && this.settings.phoneSelect && s.stage === 'board' && !!cid && cid === s.chooserId,
+      ...this.tableMe(cid, playerId),
+      isChooser: !ordered && !!cid && cid === s.chooserId,
+      canSelect: !ordered && this.settings.phoneSelect && s.stage === 'board' && !!cid && cid === s.chooserId,
       final: f
         ? {
             participant,
@@ -1191,15 +1287,19 @@ export class JeopardyMode {
             maxBet: participant ? this.maxBet(cid) : 0,
             answer: participant ? (f.answers[cid] ?? null) : null,
             result: participant ? (f.results[cid] ?? null) : null,
+            // Ставку и ответ за команду сдаёт капитан; ставку — один раз и пока идёт время.
+            writer: writer && writer !== playerId ? this.playerRef(writer) : null,
+            canBet: participant && writer === playerId && f.step === 'bets' && !(cid in f.bets) && this.betsOpen(),
+            canAnswer: participant && writer === playerId && f.step === 'question',
           }
         : null,
     }
   }
 
-  // Личное для игрока в спортивном формате: капитан ли он, играет ли он текущую тему, выбор игроков.
-  sportMe(teamId, playerId) {
+  // Личное для игрока, когда тему играет один игрок от команды: капитан ли он, играет ли он текущую тему, выбор игроков.
+  tableMe(teamId, playerId) {
     const s = this.s
-    const empty = { isCaptain: false, atTable: null, tablePlayer: null, myThemes: [], captain: null }
+    const empty = { isCaptain: false, atTable: null, tablePlayer: null, myThemes: [], captain: null, isLeader: false }
     if (!this.tablePlay() || !teamId || !this.game.team(teamId)) return empty
     const ri = s.roundIndex
     const r = this.round(ri)
@@ -1207,26 +1307,43 @@ export class JeopardyMode {
     const playing = s.themeIndex != null && ['theme', 'question'].includes(s.stage)
     const table = playing ? this.tablePlayer(teamId, ri, s.themeIndex) : null
     const hiddenNow = s.stage === 'assign' && s.phase ? s.phase.themes : []
+    // Личный раунд: пока капитаны выбирают, кто играет, выбор скрыт.
+    const personal = this.kindOf(ri) === 'personal'
+    const leaderHidden = personal && s.stage === 'assign'
+    const isLeader = personal && !leaderHidden && this.leaderOf(teamId, ri) === playerId
     const myThemes = []
-    r?.themes.forEach((t, ti) => {
-      if (hiddenNow.includes(ti) && !isCaptain) return
-      if (this.tablePlayer(teamId, ri, ti) === playerId && !this.themeComplete(ri, ti)) {
-        myThemes.push({ index: ti, name: this.themeVisible(ri, ti) ? t.name : null })
-      }
-    })
+    if (!leaderHidden) {
+      r?.themes.forEach((t, ti) => {
+        if (hiddenNow.includes(ti) && !isCaptain) return
+        if (!this.themeInPlay(ri, ti) || this.themeComplete(ri, ti)) return
+        if (this.tablePlayer(teamId, ri, ti) === playerId) myThemes.push({ index: ti, name: this.themeVisible(ri, ti) ? t.name : null })
+      })
+    }
     let captain = null
     if (isCaptain && s.stage === 'assign' && s.phase && r) {
-      const played = new Set()
-      r.themes.forEach((_, ti) => {
-        const pid = this.assignedPlayer(teamId, ri, ti)
-        if (pid && this.themeStarted(ri, ti) && !s.phase.themes.includes(ti)) played.add(pid)
-      })
-      captain = {
-        themes: s.phase.themes.map((ti) => ({ index: ti, name: this.themeVisible(ri, ti) ? r.themes[ti]?.name ?? null : null })),
-        members: this.game.teamMembers(teamId).map((p) => ({ id: p.id, name: p.name, played: played.has(p.id) })),
-        picks: { ...(s.assign?.[ri]?.[teamId] ?? {}) },
-        ready: s.phase.ready.includes(teamId),
-        unique: this.uniqueRequired(teamId, ri),
+      const members = this.game.teamMembers(teamId)
+      if (s.phase.scope === 'leader') {
+        const leader = s.leaders?.[ri]?.[teamId]
+        captain = {
+          themes: [{ index: -1, name: `Кто играет ${r.name.toLowerCase()}` }],
+          members: members.map((p) => ({ id: p.id, name: p.name, played: false })),
+          picks: leader ? { '-1': leader } : {},
+          ready: s.phase.ready.includes(teamId),
+          unique: false,
+        }
+      } else {
+        const played = new Set()
+        r.themes.forEach((_, ti) => {
+          const pid = this.assignedPlayer(teamId, ri, ti)
+          if (pid && this.themeStarted(ri, ti) && !s.phase.themes.includes(ti)) played.add(pid)
+        })
+        captain = {
+          themes: s.phase.themes.map((ti) => ({ index: ti, name: this.themeVisible(ri, ti) ? r.themes[ti]?.name ?? null : null })),
+          members: members.map((p) => ({ id: p.id, name: p.name, played: played.has(p.id) })),
+          picks: { ...(s.assign?.[ri]?.[teamId] ?? {}) },
+          ready: s.phase.ready.includes(teamId),
+          unique: this.uniqueRequired(teamId, ri),
+        }
       }
     }
     return {
@@ -1235,6 +1352,7 @@ export class JeopardyMode {
       tablePlayer: this.playerRef(table),
       myThemes,
       captain,
+      isLeader,
     }
   }
 }

@@ -2,7 +2,8 @@
 // Ведущий читает вопрос, по сигналу «Время!» идёт минута, нажатие до сигнала — фальстарт.
 // После неверного ответа соперники получают оставшееся время (по умолчанию не меньше 20 секунд).
 // Кто взял больше вопросов в бою — побеждает и получает турнирные очки (по умолчанию +1).
-// Счёт турнира сквозной: взятые во всех боях вопросы плюс очки за победы (или только очки за победы).
+// Счёт турнира сквозной: взятые во всех боях вопросы (по N очков за вопрос) плюс очки за победы
+// (или только очки за победы). У команды одна кнопка — телефон капитана или игрока, которому её отдал ведущий.
 // Вопросы ведущий читает с листа, программа ведёт кнопки, таймер, счёт боя и таблицу турнира.
 
 import { GameError } from './util.js'
@@ -101,9 +102,17 @@ export class BrainRingMode {
     return this.s.battle ? this.s.battle.teams : null
   }
 
-  buzzDenied(cid) {
+  buzzDenied(cid, playerId) {
     const b = this.s.battle
-    return b && !b.teams.includes(cid) ? 'notInBattle' : null
+    if (b && !b.teams.includes(cid)) return 'notInBattle'
+    const holder = this.buttonOf(cid)
+    return holder && holder !== playerId ? 'notButton' : null
+  }
+
+  // Одна кнопка на команду: у кого она (в личной игре или если выключено — у каждого своя).
+  buttonOf(cid) {
+    if (!this.settings.teamMode || !this.settings.brOneButton) return null
+    return this.game.buttonHolder(cid)
   }
 
   activeCompetitors() {
@@ -367,7 +376,8 @@ export class BrainRingMode {
     if (correct) {
       const b = s.battle
       if (b) b.scores[cid] = (b.scores[cid] ?? 0) + s.value
-      if (!b || this.settings.brTotal === 'sum') this.game.addScore(cid, s.value)
+      // В сквозной счёт турнира взятый вопрос идёт с весом «очков за вопрос» (например, 0,5).
+      if (!b || this.settings.brTotal === 'sum') this.game.addScore(cid, s.value * this.settings.brTakenPoints)
       s.history.push({ index: s.qIndex, result: 'correct', competitorId: cid, value: s.value, battle: b?.no ?? null })
       s.answeredBy = cid
       s.carry = 0
@@ -521,9 +531,16 @@ export class BrainRingMode {
     }
   }
 
-  meView(cid) {
+  meView(cid, playerId) {
     const b = this.s.battle
-    return { inBattle: b ? !!cid && b.teams.includes(cid) : null }
+    const holder = cid ? this.buttonOf(cid) : null
+    const p = holder ? this.game.player(holder) : null
+    return {
+      inBattle: b ? !!cid && b.teams.includes(cid) : null,
+      // null — кнопка у каждого игрока; иначе — у кого кнопка команды (и на связи ли его телефон)
+      button: p ? { playerId: p.id, name: p.name, connected: this.game.isConnected(p.id) } : null,
+      isButton: holder ? holder === playerId : null,
+    }
   }
 }
 

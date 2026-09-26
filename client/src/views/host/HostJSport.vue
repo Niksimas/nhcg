@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// Спортивная «Своя игра» у ведущего: вид раунда, распределение игроков по темам, темы и вопросы по порядку.
+// Спортивная «Своя игра», «Эрудит-квартет» и «Хамса» у ведущего: распределение игроков по темам, темы и вопросы
+// по порядку. Раунд выбирается вкладками над игрой — вид раунда задан правилами.
 import { computed } from 'vue'
-import type { RoundKind } from '../../lib/types'
 import { competitorMap, fmtScore, textOn } from '../../lib/util'
-import { KIND_HINT, kindsFor, kindTitle } from '../../lib/rules'
+import { kindHint } from '../../lib/rules'
 import BoardGrid from '../../components/BoardGrid.vue'
 import TimerBar from '../../components/TimerBar.vue'
 import Icon from '../../components/Icon.vue'
@@ -16,9 +16,11 @@ const j = computed(() => s.value.jeopardy!)
 const comps = computed(() => competitorMap(s.value))
 const round = computed(() => j.value.rounds[j.value.roundIndex])
 const board = computed(() => j.value.board ?? [])
-const KINDS = computed<RoundKind[]>(() => kindsFor(j.value.format))
 const khamsa = computed(() => j.value.format === 'khamsa')
-// «Хамса», четвёртый раунд: кто сейчас убирает тему и сколько тем осталось.
+const personal = computed(() => j.value.kind === 'personal')
+// «Хамса»: стоимость первого вопроса темы в этом раунде (100, 200, 300, 400).
+const priceStep = computed(() => s.value.settings.hPriceBase * (j.value.roundNumber ?? 1))
+// «Хамса», персональный раунд: кто сейчас убирает тему и сколько тем осталось.
 const strike = computed(() => j.value.strike ?? null)
 const strikeLeft = computed(() => board.value.filter((t) => !t.struck).length)
 
@@ -43,11 +45,6 @@ const nextPrice = computed(() => {
 })
 const assignScopeThemes = computed(() => (j.value.phase?.themes ?? []).map((t) => t.index))
 
-function setKind(kind: RoundKind) {
-  if (kind === j.value.kind) return
-  void run('j.kind', { kind })
-}
-
 function assign(teamId: string, themeIndex: number, ev: Event) {
   const playerId = (ev.target as HTMLSelectElement).value
   if (playerId) void run('j.assign.set', { teamId, themeIndex, playerId })
@@ -67,32 +64,23 @@ function rename(ti: number) {
 
 <template>
   <div class="sport">
-    <div class="kind-row">
-      <span class="label">Раунд «{{ round?.name }}»</span>
-      <div class="kinds">
-        <button
-          v-for="k in KINDS"
-          :key="k"
-          class="kind"
-          :class="{ on: j.kind === k }"
-          :title="KIND_HINT[k]"
-          @click="setKind(k)"
-        >
-          {{ kindTitle(k, j.format) }}
-        </button>
-      </div>
-      <span v-if="khamsa && j.roundNumber" class="muted small">Раунд {{ j.roundNumber }} из 5 · вопросы ×{{ j.roundNumber }}</span>
-    </div>
-    <p v-if="j.kind" class="muted small hint">{{ KIND_HINT[j.kind] }}</p>
+    <p v-if="j.kind" class="muted small hint">
+      <b>{{ round?.name }}.</b> {{ kindHint(j.kind, j.format) }}
+      <template v-if="khamsa && j.roundNumber">Вопросы — по {{ fmtScore(priceStep) }}–{{ fmtScore(priceStep * 5) }}.</template>
+    </p>
 
-    <!-- Капитаны выбирают игроков -->
+    <!-- Капитаны выбирают игрока личного (персонального) раунда -->
     <div v-if="j.stage === 'assign' && j.phase && j.phase.scope === 'leader'" class="card assign">
       <div class="assign-head">
-        <h3>Капитаны выбирают игрока четвёртого раунда</h3>
+        <h3>Капитаны выбирают, кто сыграет {{ round?.name.toLowerCase() }}</h3>
         <TimerBar v-if="s.timers.assign" :timer="s.timers.assign" :now="now" />
       </div>
       <p class="muted small">
-        Обычно — самого сильного. Затем команды по очереди уберут темы, оставшуюся сыграют выбранные игроки.
+        {{
+          khamsa
+            ? 'Обычно — самого сильного. Затем команды по очереди уберут темы, оставшуюся сыграют выбранные игроки.'
+            : 'Выбранный игрок сыграет за команду все темы раунда. Если не выбрать — играет капитан.'
+        }}
       </p>
       <div class="theme-names">
         <span class="muted small">Темы раунда:</span>
@@ -119,7 +107,7 @@ function rename(ti: number) {
         </template>
       </div>
       <button class="btn primary big" @click="run('j.assign.done')">
-        <Icon name="play" /> Готово — к выбору темы <span class="kbd">Enter</span>
+        <Icon name="play" /> Готово — {{ khamsa ? 'к выбору темы' : 'к темам раунда' }} <span class="kbd">Enter</span>
       </button>
     </div>
 
@@ -162,7 +150,7 @@ function rename(ti: number) {
       </button>
     </div>
 
-    <!-- «Хамса», четвёртый раунд: команды по очереди убирают темы -->
+    <!-- «Хамса», персональный раунд: команды по очереди убирают темы -->
     <div v-else-if="j.stage === 'strike' && strike" class="card strike">
       <h3>Команды по очереди убирают темы — останется одна</h3>
       <div class="order">
@@ -199,13 +187,8 @@ function rename(ti: number) {
           <Icon name="play" /> {{ j.themeIndex === nextTheme ? 'Продолжить тему' : 'Следующая тема' }}: «{{ themeName(nextTheme) }}»
           <span class="kbd">Enter</span>
         </button>
-        <button
-          v-if="j.tablePlay && j.kind !== 'captain'"
-          class="btn ghost"
-          title="Капитаны выберут игроков заново"
-          @click="run('j.assign.start')"
-        >
-          <Icon name="users" /> Выбрать игроков заново
+        <button v-if="j.tablePlay" class="btn ghost" title="Капитаны выберут игроков заново" @click="run('j.assign.start')">
+          <Icon name="users" /> {{ personal ? 'Выбрать игрока раунда заново' : 'Выбрать игроков заново' }}
         </button>
       </div>
     </template>
@@ -223,15 +206,13 @@ function rename(ti: number) {
         <div v-for="t in teams" :key="t.id" class="tp" :style="{ '--c': t.color, '--t': textOn(t.color) }">
           <span class="team-name">{{ t.name }}</span>
           <select
-            v-if="j.kind !== 'captain'"
             class="select small"
             :value="j.table[t.id]?.playerId ?? ''"
-            title="Кто играет эту тему"
-            @change="assign(t.id, j.kind === 'leaders' ? -1 : j.themeIndex, $event)"
+            :title="personal ? 'Кто играет раунд за команду' : 'Кто играет эту тему'"
+            @change="assign(t.id, personal ? -1 : j.themeIndex, $event)"
           >
             <option v-for="p in membersOf(t.id)" :key="p.id" :value="p.id">{{ p.name }}</option>
           </select>
-          <b v-else>{{ j.table[t.id]?.name ?? '—' }}</b>
         </div>
       </div>
       <p v-else class="muted">Тему играют все участники{{ s.settings.teamMode ? ' команд' : '' }}.</p>
@@ -251,13 +232,7 @@ function rename(ti: number) {
             <span class="team-name">{{ comps.get(t.id)?.name ?? t.name }}</span>
           </div>
           <div v-for="(th, ti) in board" :key="ti" class="cell" :class="{ struck: th.struck }">
-            {{
-              j.kind === 'leaders'
-                ? th.struck
-                  ? '—'
-                  : j.leaders?.[t.id]?.name ?? 'капитан'
-                : j.assign[t.id]?.[ti]?.name ?? (j.kind === 'captain' ? 'капитан' : '—')
-            }}
+            {{ personal ? (th.struck ? '—' : j.leaders?.[t.id]?.name ?? 'капитан') : j.assign[t.id]?.[ti]?.name ?? '—' }}
           </div>
         </template>
       </div>
@@ -271,39 +246,8 @@ function rename(ti: number) {
   flex-direction: column;
   gap: 12px;
 }
-.kind-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.kinds {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: var(--panel-3);
-}
-.kind {
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-weight: 700;
-  padding: 0.4em 0.8em;
-  border-radius: 9px;
-  cursor: pointer;
-}
-.kind:hover:not(.on) {
-  color: var(--text);
-}
-.kind.on {
-  background: var(--panel);
-  color: var(--accent);
-  box-shadow: var(--shadow-sm);
-}
 .hint {
-  margin: -4px 0 0;
+  margin: 0;
 }
 .small {
   font-size: 0.85rem;
@@ -531,11 +475,6 @@ function rename(ti: number) {
   margin-top: 10px;
 }
 @media (max-width: 760px) {
-  .kinds {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    width: 100%;
-  }
   .assign-table {
     grid-template-columns: minmax(96px, 1fr) repeat(var(--n), minmax(118px, 1fr));
   }
